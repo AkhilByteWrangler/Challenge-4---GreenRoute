@@ -64,7 +64,9 @@ export default function DecisionPanel({ decision, job }) {
           <div className="mt-2 flex items-center gap-2">
             <span
               className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium tracking-wide
-                ${decision.policySource === 'ppo_confident'
+                ${decision.policySource === 'hold'
+                  ? 'bg-purple-500/15 text-purple-400'
+                  : decision.policySource === 'ppo_confident'
                   ? 'bg-accent-green/15 text-accent-green'
                   : decision.policySource === 'ppo_exploring'
                   ? 'bg-accent-cyan/15 text-accent-cyan'
@@ -73,7 +75,8 @@ export default function DecisionPanel({ decision, job }) {
                   : 'bg-slate-500/15 text-slate-400'
                 }`}
             >
-              {decision.policySource === 'ppo_confident' ? '🧠 PPO Policy (Confident)' :
+              {decision.policySource === 'hold' ? '⏸ Holding — Waiting for Better Window' :
+               decision.policySource === 'ppo_confident' ? '🧠 PPO Policy (Confident)' :
                decision.policySource === 'ppo_exploring' ? '🔍 PPO Policy (Exploring)' :
                decision.policySource === 'constraint' ? '🔒 Hard Constraint' : 'Fallback'}
             </span>

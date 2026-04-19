@@ -17,20 +17,38 @@ export default function useSimulation() {
   useEffect(() => { stateRef.current = simState; }, [simState]);
 
   const tick = useCallback(() => {
-    const { state, job, decision, carbonSaved } = simulationStep(stateRef.current);
+    const { state, job, decision, carbonSaved, held, released } = simulationStep(stateRef.current);
     setSimState(state);
     setCurrentJob(job);
-    setCurrentDecision(decision);
+    setCurrentDecision(held ? { ...decision, policySource: 'hold', reason: `⏸ HELD — carbon too high, waiting for renewable window. ${decision.reason}` } : decision);
 
-    // Add feed item
+    // Add feed item (mark held jobs)
     feedIdRef.current += 1;
     setFeedItems((prev) => {
-      const next = [{ id: feedIdRef.current, job, decision, carbonSaved }, ...prev];
+      const items = [];
+
+      // Show released held jobs first
+      if (released) {
+        for (const entry of released) {
+          feedIdRef.current += 1;
+          items.push({
+            id: feedIdRef.current, job: entry.job,
+            decision: { dest: entry.job.origin }, // placeholder
+            carbonSaved: 0, held: false, released: true,
+            releaseReason: entry.releaseReason,
+          });
+        }
+      }
+
+      // Current job
+      items.push({ id: feedIdRef.current, job, decision, carbonSaved, held });
+
+      const next = [...items, ...prev];
       return next.slice(0, 40);
     });
 
-    // Spawn routing packet (arrow across map)
-    if (decision.dest !== job.origin) {
+    // Spawn routing packet (arrow across map) — not for held jobs
+    if (!held && decision.dest !== job.origin) {
       setPackets((prev) => [
         ...prev,
         {

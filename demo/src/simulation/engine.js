@@ -795,6 +795,57 @@ function initBaselineMetrics() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// HOLD QUEUE & QUEUE COMPOSITION
+// ═══════════════════════════════════════════════════════════════
+
+let _holdQueue = [];       // [{job, heldAt, holdSteps, reason}]
+let _jobQueue  = [];       // upcoming jobs waiting to be processed
+const HOLD_MAX_STEPS = 8;  // max ~1.2 hours sim time before forced release
+const HOLD_THRESHOLD = 0.25; // NN hold prob must exceed this
+
+// Queue composition counters (running totals for display)
+let _queueStats = { flexible: 0, semiFlex: 0, pinned: 0, held: 0, totalProcessed: 0 };
+
+export function getHoldQueue() { return _holdQueue; }
+export function getQueueStats() { return { ..._queueStats, holdQueue: _holdQueue.length }; }
+
+function shouldHold(job, snap, holdProb) {
+  // Only flexible jobs can be held (they have long SLA headroom)
+  if (job.type !== 'FLEXIBLE') return false;
+  // NN must want to hold
+  if (holdProb < HOLD_THRESHOLD) return false;
+  // Don't hold if queue is already full
+  if (_holdQueue.length >= 4) return false;
+  // Hold if current best carbon is bad (above median ~250)
+  const carbons = LOC_IDS.map(id => snap[id]?.carbon ?? 999);
+  const bestNow = Math.min(...carbons);
+  if (bestNow > 220) return true;  // carbon is high → wait for better window
+  return false;
+}
+
+function releaseHeldJobs(snap) {
+  // Check each held job: release if conditions improved or timeout
+  const released = [];
+  const kept = [];
+  const carbons = LOC_IDS.map(id => snap[id]?.carbon ?? 999);
+  const bestNow = Math.min(...carbons);
+
+  for (const entry of _holdQueue) {
+    entry.holdSteps += 1;
+    const timedOut = entry.holdSteps >= HOLD_MAX_STEPS;
+    const conditionsImproved = bestNow < entry.carbonAtHold * 0.8; // 20% improvement
+    if (timedOut || conditionsImproved) {
+      entry.releaseReason = timedOut ? 'timeout' : 'conditions_improved';
+      released.push(entry);
+    } else {
+      kept.push(entry);
+    }
+  }
+  _holdQueue = kept;
+  return released;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // SIMULATION STEP
 // ═══════════════════════════════════════════════════════════════
 
@@ -805,6 +856,9 @@ export function createInitialState() {
   _weatherEvents = {};
   initPPO();
   initBaselineMetrics();
+  _holdQueue = [];
+  _jobQueue = [];
+  _queueStats = { flexible: 0, semiFlex: 0, pinned: 0, held: 0, totalProcessed: 0 };
   const state = {
     utcHour: 6.0,
     day: 1,
@@ -814,6 +868,8 @@ export function createInitialState() {
     totalJobsProcessed: 0,
     totalSLAViolations: 0,
     totalRenewableSum: 0,
+    totalHoldDecisions: 0,
+    totalHoldReleases: 0,
     cloudStates: {},
     windGustStates: {},
     utilisations,
@@ -844,11 +900,49 @@ export function simulationStep(prevState) {
     state.windGustStates[id] = _snapshot[id]?.windExtra > 2 ? 0.7 : 0;
   }
 
-  // 3. Generate job
+  // 3. Generate job + track queue composition
   const job = generateJob(state.utcHour);
+  if (job.type === 'FLEXIBLE') _queueStats.flexible += 1;
+  else if (job.type === 'SEMI_FLEX') _queueStats.semiFlex += 1;
+  else _queueStats.pinned += 1;
 
-  // 4. Agent decision (Q-learning)
+  // 3b. Release held jobs whose conditions improved or timed out
+  const released = releaseHeldJobs(_snapshot);
+  for (const entry of released) {
+    state.totalHoldReleases = (state.totalHoldReleases || 0) + 1;
+    // Process released job with current (better) snapshot
+    const relDecision = agentDecide(entry.job, _snapshot);
+    const relOriginCarbon = _snapshot[entry.job.origin]?.carbon ?? 0;
+    const relDestCarbon = _snapshot[relDecision.dest]?.carbon ?? 0;
+    const relCarbonSaved = (relOriginCarbon - relDestCarbon) * entry.job.compute / 1000;
+    state.totalCarbonSaved += Math.max(0, relCarbonSaved);
+    state.totalJobsProcessed += 1;
+    state.totalRenewableSum += _snapshot[relDecision.dest]?.rf ?? 0;
+    _queueStats.totalProcessed += 1;
+  }
+
+  // 4. Agent decision
   const decision = agentDecide(job, _snapshot);
+
+  // 4a. Check if NN wants to HOLD this job
+  let held = false;
+  if (_nnLoaded && job.type === 'FLEXIBLE') {
+    const features = extractFeatures47(_snapshot, job.origin);
+    const result = nnForward(features);
+    const carbons = LOC_IDS.map(id => _snapshot[id]?.carbon ?? 999);
+    const bestNow = Math.min(...carbons);
+    if (shouldHold(job, _snapshot, result.holdProb)) {
+      _holdQueue.push({
+        job, heldAt: state.utcHour, holdSteps: 0,
+        carbonAtHold: bestNow,
+        holdProb: result.holdProb,
+        reason: `Carbon high (${Math.round(bestNow)}g) — waiting for renewable window`,
+      });
+      held = true;
+      _queueStats.held += 1;
+      state.totalHoldDecisions = (state.totalHoldDecisions || 0) + 1;
+    }
+  }
 
   // ── 4b. Shadow baseline decision (same job, same snapshot) ──
   const randomDest = randomBaseline(job, _snapshot);
@@ -864,35 +958,40 @@ export function simulationStep(prevState) {
   _baselineMetrics.random.renewableSum += _snapshot[randomDest].rf;
   _baselineMetrics.random.jobs += 1;
 
-  // 5. Update utilisation (only RL agent affects actual state)
-  const destCap = LOCATIONS[decision.dest].capacity;
-  state.utilisations = { ...state.utilisations };
-  state.utilisations[decision.dest] = Math.min(0.95,
-    state.utilisations[decision.dest] + job.compute / destCap);
+  // 5-6. Only update metrics if job was NOT held
+  let carbonSaved = 0, costSaved = 0, slaOk = true;
 
-  // 6. RL agent metrics
-  const destCarbon = _snapshot[decision.dest].carbon;
-  const destCost = _snapshot[decision.dest].cost;
-  const carbonSaved = (originCarbon - destCarbon) * job.compute / 1000;
-  const costSaved = (originCost - destCost) * job.compute;
+  if (!held) {
+    // 5. Update utilisation
+    const destCap = LOCATIONS[decision.dest].capacity;
+    state.utilisations = { ...state.utilisations };
+    state.utilisations[decision.dest] = Math.min(0.95,
+      state.utilisations[decision.dest] + job.compute / destCap);
 
-  state.totalCarbonSaved += Math.max(0, carbonSaved);
-  state.totalCostSaved += costSaved;
-  state.totalJobsProcessed += 1;
-  state.totalRenewableSum += _snapshot[decision.dest].rf;
+    // 6. RL agent metrics
+    const destCarbon = _snapshot[decision.dest].carbon;
+    const destCost = _snapshot[decision.dest].cost;
+    carbonSaved = (originCarbon - destCarbon) * job.compute / 1000;
+    costSaved = (originCost - destCost) * job.compute;
+
+    state.totalCarbonSaved += Math.max(0, carbonSaved);
+    state.totalCostSaved += costSaved;
+    state.totalJobsProcessed += 1;
+    state.totalRenewableSum += _snapshot[decision.dest].rf;
+    _queueStats.totalProcessed += 1;
+
+    if (job.maxLatency > 0 && job.type === 'SEMI_FLEX' && decision.dest !== job.origin) {
+      if (job.procTime + 0.015 > job.maxLatency) {
+        slaOk = false;
+        state.totalSLAViolations += 1;
+      }
+    }
+  }
 
   _baselineMetrics.rl.carbonSaved = state.totalCarbonSaved;
   _baselineMetrics.rl.costSaved = state.totalCostSaved;
   _baselineMetrics.rl.renewableSum = state.totalRenewableSum;
   _baselineMetrics.rl.jobs = state.totalJobsProcessed;
-
-  let slaOk = true;
-  if (job.maxLatency > 0 && job.type === 'SEMI_FLEX' && decision.dest !== job.origin) {
-    if (job.procTime + 0.015 > job.maxLatency) {
-      slaOk = false;
-      state.totalSLAViolations += 1;
-    }
-  }
 
   // 7. Advance time
   state.utcHour += 0.15;
@@ -904,5 +1003,5 @@ export function simulationStep(prevState) {
     state.utilisations[loc] = Math.max(0.12, state.utilisations[loc] * 0.97 + (Math.random() - 0.5) * 0.01);
   }
 
-  return { state, job, decision, carbonSaved, costSaved, slaOk };
+  return { state, job, decision, carbonSaved, costSaved, slaOk, held, released };
 }

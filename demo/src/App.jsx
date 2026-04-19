@@ -6,6 +6,7 @@ import JobPanel from './components/JobPanel';
 import DecisionPanel from './components/DecisionPanel';
 import RoutingFeed from './components/RoutingFeed';
 import DCStatus from './components/DCStatus';
+import QueuePanel from './components/QueuePanel';
 import LearningPanel from './components/LearningPanel';
 import ImpactBar from './components/ImpactBar';
 import BaselineComparison from './components/BaselineComparison';
@@ -83,6 +84,7 @@ export default function App() {
           <LearningPanel simState={sim.simState} />
           <JobPanel job={sim.currentJob} />
           <DecisionPanel decision={sim.currentDecision} job={sim.currentJob} />
+          <QueuePanel simState={sim.simState} />
           <RoutingFeed feedItems={sim.feedItems} />
           <DCStatus simState={sim.simState} />
         </div>
