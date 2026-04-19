@@ -41,7 +41,7 @@ export default function DecisionPanel({ decision, job }) {
           />
           <Row
             label="Saving"
-            value={`${saving > 0 ? '+' : ''}${saving}g CO₂`}
+            value={`${saving > 0 ? '+' : ''}${(saving / 1_000_000).toFixed(4)}t CO₂`}
             valueClass={saving > 0 ? 'text-accent-green' : 'text-accent-red'}
           />
 

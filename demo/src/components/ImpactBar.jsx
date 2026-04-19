@@ -1,4 +1,4 @@
-import { Leaf, DollarSign, ShieldCheck, Zap } from 'lucide-react';
+import { Leaf, ShieldCheck, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function ImpactBar({ simState }) {
@@ -11,18 +11,12 @@ export default function ImpactBar({ simState }) {
     : '0';
 
   return (
-    <div className="grid grid-cols-4 gap-3 px-5 py-3 bg-bg-secondary border-t border-border">
+    <div className="grid grid-cols-3 gap-3 px-5 py-3 bg-bg-secondary border-t border-border">
       <ImpactItem
         icon={<Leaf className="w-4 h-4" />}
-        value={Math.round(totalCarbonSaved).toLocaleString()}
-        unit="gCO₂ saved"
+        value={(totalCarbonSaved / 1_000_000).toFixed(3)}
+        unit="tCO₂ saved"
         color="text-accent-green"
-      />
-      <ImpactItem
-        icon={<DollarSign className="w-4 h-4" />}
-        value={`$${totalCostSaved.toFixed(2)}`}
-        unit="cost saved"
-        color="text-accent-amber"
       />
       <ImpactItem
         icon={<ShieldCheck className="w-4 h-4" />}

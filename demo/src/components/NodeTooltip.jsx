@@ -22,7 +22,6 @@ export default function NodeTooltip({ data, onClose }) {
         <BarRow label="♻ Renewable" value={`${(rf * 100).toFixed(0)}%`} pct={rf} color={rf > 0.5 ? '#00e676' : '#ff5252'} />
         <BarRow label="⚡ Carbon" value={`${Math.round(carbon)} gCO₂`} pct={Math.min(1, carbon / 500)} color={carbon < 200 ? '#00e676' : carbon < 400 ? '#FFB300' : '#ff5252'} />
         <BarRow label="📊 Load" value={`${(util * 100).toFixed(0)}%`} pct={util} color={util > 0.8 ? '#ff5252' : '#40c4ff'} />
-        <Row label="$ Energy" value={`$${cost.toFixed(3)}/kWh`} />
       </div>
     </motion.div>
   );

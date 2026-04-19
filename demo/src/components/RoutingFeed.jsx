@@ -51,7 +51,7 @@ function FeedItem({ item }) {
         className={`font-mono text-[11px] shrink-0 ${isPositive ? 'text-accent-green' : 'text-accent-red'}`}
       >
         {isPositive ? '-' : '+'}
-        {Math.abs(Math.round(carbonSaved))}g
+        {(Math.abs(carbonSaved) / 1_000_000).toFixed(4)}t
       </span>
     </motion.div>
   );

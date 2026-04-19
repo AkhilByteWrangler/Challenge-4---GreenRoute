@@ -64,9 +64,9 @@ export default function BaselineComparison({ simState }) {
                   initial={{ scale: 1.05 }}
                   animate={{ scale: 1 }}
                 >
-                  {Math.round(data.carbonSaved).toLocaleString()}
+                  {(data.carbonSaved / 1_000_000).toFixed(3)}
                 </motion.div>
-                <div className="text-[9px] text-slate-500 mt-0.5">gCO₂ saved</div>
+                <div className="text-[9px] text-slate-500 mt-0.5">tCO₂ saved</div>
               </div>
 
               {/* Carbon bar */}
@@ -82,8 +82,7 @@ export default function BaselineComparison({ simState }) {
 
               {/* Secondary metrics */}
               <div className="flex justify-between text-[9px]">
-                <span className="text-slate-500">♻ {avgRenew}%</span>
-                <span className="text-slate-500">${data.costSaved.toFixed(1)}</span>
+                <span className="text-slate-500">♻ {avgRenew}% renewable</span>
               </div>
             </div>
           );
