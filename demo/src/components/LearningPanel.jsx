@@ -19,8 +19,9 @@ export default function LearningPanel({ simState }) {
   else if (m.epsilon < 1.0) { phase = 'Refining Policy'; phaseColor = 'text-accent-cyan'; }
 
   return (
-    <div className="px-5 py-4 border-b border-border">
-      <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 mb-3 font-medium">
+    <div className="px-5 py-4 border-b border-white/[0.06]">
+      <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 mb-3 font-medium flex items-center gap-2">
+        <span className="w-1 h-3 rounded-full bg-accent-green" />
         PPO Agent (Actor-Critic)
       </h3>
 
@@ -84,8 +85,8 @@ export default function LearningPanel({ simState }) {
               <span className="text-[10px] w-6 font-mono text-slate-500">{id}</span>
               <div className="flex-1 h-1.5 bg-bg-primary rounded-full overflow-hidden">
                 <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.max(1, pct)}%`, backgroundColor: loc.colour }}
+                  className="h-full rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${Math.max(2, pct)}%`, backgroundColor: loc.colour }}
                 />
               </div>
               <span className="text-[10px] w-8 text-right font-mono text-slate-400">

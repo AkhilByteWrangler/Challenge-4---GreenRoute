@@ -3,7 +3,7 @@ import { getSnapshot } from '../simulation/engine';
 
 export default function DCStatus({ simState }) {
   return (
-    <div className="px-5 py-4 border-b border-border">
+    <div className="px-5 py-4 border-b border-white/[0.06]">
       <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 mb-3 font-medium">
         Data Centre Status
       </h3>

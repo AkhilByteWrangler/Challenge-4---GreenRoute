@@ -4,7 +4,7 @@ import { createInitialState, simulationStep } from '../simulation/engine';
 export default function useSimulation() {
   const [simState, setSimState] = useState(createInitialState);
   const [paused, setPaused] = useState(false);
-  const [speed, setSpeed] = useState(4);
+  const [speed, setSpeed] = useState(3);
   const [currentJob, setCurrentJob] = useState(null);
   const [currentDecision, setCurrentDecision] = useState(null);
   const [feedItems, setFeedItems] = useState([]);
@@ -67,7 +67,7 @@ export default function useSimulation() {
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (!paused) {
-      const ms = Math.max(200, 2500 - speed * 230);
+      const ms = Math.max(600, 3000 - speed * 300);
       intervalRef.current = setInterval(tick, ms);
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };

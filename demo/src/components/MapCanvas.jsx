@@ -11,7 +11,7 @@ function project(lon, lat, W, H) {
   return [x, y];
 }
 
-export default function MapCanvas({ simState, packets, advancePackets }) {
+export default function MapCanvas({ simState, packets, advancePackets, paused }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const dimRef = useRef({ W: 800, H: 500 });
@@ -78,13 +78,27 @@ export default function MapCanvas({ simState, packets, advancePackets }) {
 
     // 8. Routing arcs
     drawRoutingArcs(ctx, packets, nodePositions);
-    advancePackets();
+    if (!paused) advancePackets();
 
     // 9. DC nodes with gauges
     drawDCNodes(ctx, hour, snap, simState, W, H, nodePositions, t);
 
+    // 10. Pause overlay
+    if (paused) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(0,230,118,0.9)';
+      ctx.font = 'bold 28px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('⏸  PAUSED', W / 2, H / 2);
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillStyle = 'rgba(200,210,230,0.7)';
+      ctx.fillText('Click Resume to continue simulation', W / 2, H / 2 + 30);
+      ctx.textAlign = 'left';
+    }
+
     frameRef.current = requestAnimationFrame(render);
-  }, [simState, packets, advancePackets]);
+  }, [simState, packets, advancePackets, paused]);
 
   useEffect(() => {
     frameRef.current = requestAnimationFrame(render);
@@ -116,7 +130,7 @@ export default function MapCanvas({ simState, packets, advancePackets }) {
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden">
-      <canvas ref={canvasRef} onClick={handleClick} className="block w-full h-full cursor-crosshair" />
+      <canvas ref={canvasRef} onClick={handleClick} className={`block w-full h-full ${paused ? 'cursor-default' : 'cursor-crosshair'}`} />
       {tooltip && <NodeTooltip data={tooltip} onClose={() => setTooltip(null)} />}
     </div>
   );
@@ -167,29 +181,44 @@ function drawStars(ctx, utcHour, W, H, t) {
 
 // ── 3. US landmass ──
 function drawLandmass(ctx, utcHour, W, H) {
+  // Outer glow around the country
+  ctx.save();
   ctx.beginPath();
   US_OUTLINE.forEach(([lon, lat], i) => {
     const [x, y] = project(lon, lat, W, H);
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
   ctx.closePath();
-  // Terrain-like gradient fill
+  ctx.shadowColor = 'rgba(0,180,200,0.15)';
+  ctx.shadowBlur = 30;
+  ctx.strokeStyle = 'rgba(60,140,180,0.35)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+
+  // Fill
+  ctx.beginPath();
+  US_OUTLINE.forEach(([lon, lat], i) => {
+    const [x, y] = project(lon, lat, W, H);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.closePath();
   const tGrad = ctx.createLinearGradient(0, 0, W, H);
-  tGrad.addColorStop(0, 'rgba(22,40,55,0.6)');
-  tGrad.addColorStop(0.3, 'rgba(18,35,45,0.55)');
-  tGrad.addColorStop(0.6, 'rgba(25,38,42,0.5)');
-  tGrad.addColorStop(1, 'rgba(20,32,40,0.55)');
+  tGrad.addColorStop(0, 'rgba(15,30,50,0.7)');
+  tGrad.addColorStop(0.3, 'rgba(12,28,45,0.65)');
+  tGrad.addColorStop(0.6, 'rgba(18,32,48,0.6)');
+  tGrad.addColorStop(1, 'rgba(14,26,42,0.65)');
   ctx.fillStyle = tGrad;
   ctx.fill();
-  ctx.strokeStyle = 'rgba(100,160,200,0.3)';
+  ctx.strokeStyle = 'rgba(80,160,220,0.4)';
   ctx.lineWidth = 1.5;
   ctx.stroke();
 }
 
 // ── 4. State borders ──
 function drawStateBorders(ctx, W, H) {
-  ctx.strokeStyle = 'rgba(80,130,170,0.15)';
-  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = 'rgba(80,140,190,0.2)';
+  ctx.lineWidth = 0.6;
   for (const seg of STATE_BORDERS) {
     ctx.beginPath();
     seg.forEach(([lon, lat], i) => {
@@ -202,11 +231,18 @@ function drawStateBorders(ctx, W, H) {
 
 // ── 5. City dots ──
 function drawCities(ctx, W, H) {
-  ctx.fillStyle = 'rgba(140,160,180,0.25)';
   for (const city of CITIES) {
     const [cx, cy] = project(city.lon, city.lat, W, H);
+    // Soft glow
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 4);
+    glow.addColorStop(0, 'rgba(160,180,200,0.3)');
+    glow.addColorStop(1, 'rgba(160,180,200,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - 4, cy - 4, 8, 8);
+    // Dot
+    ctx.fillStyle = 'rgba(160,180,200,0.4)';
     ctx.beginPath();
-    ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 1.2, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -389,35 +425,48 @@ function drawRoutingArcs(ctx, packets, nodePositions) {
     if (!o || !d) continue;
 
     const mx = (o.x + d.x) / 2;
-    const my = Math.min(o.y, d.y) - 40 - Math.abs(o.x - d.x) * 0.15;
+    const my = Math.min(o.y, d.y) - 50 - Math.abs(o.x - d.x) * 0.18;
     const t = p.t;
     const x = (1 - t) * (1 - t) * o.x + 2 * (1 - t) * t * mx + t * t * d.x;
     const y = (1 - t) * (1 - t) * o.y + 2 * (1 - t) * t * my + t * t * d.y;
 
-    // Arc trail (faint)
+    // Arc trail — gradient from origin to destination
+    ctx.save();
     ctx.beginPath();
     ctx.moveTo(o.x, o.y);
     ctx.quadraticCurveTo(mx, my, d.x, d.y);
-    ctx.strokeStyle = p.colour + '18';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = p.colour + '25';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 4]);
     ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
 
-    // Glow
-    const glow = ctx.createRadialGradient(x, y, 0, x, y, 14);
-    glow.addColorStop(0, p.colour + 'aa');
-    glow.addColorStop(0.5, p.colour + '33');
+    // Large outer glow
+    const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, 22);
+    outerGlow.addColorStop(0, p.colour + '55');
+    outerGlow.addColorStop(0.4, p.colour + '22');
+    outerGlow.addColorStop(1, p.colour + '00');
+    ctx.fillStyle = outerGlow;
+    ctx.fillRect(x - 22, y - 22, 44, 44);
+
+    // Inner glow
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, 10);
+    glow.addColorStop(0, p.colour + 'cc');
+    glow.addColorStop(0.6, p.colour + '44');
     glow.addColorStop(1, p.colour + '00');
     ctx.fillStyle = glow;
-    ctx.fillRect(x - 14, y - 14, 28, 28);
+    ctx.fillRect(x - 10, y - 10, 20, 20);
 
-    // Packet dot
+    // Packet dot with white core
     ctx.beginPath();
-    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
     ctx.fillStyle = p.colour;
     ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
   }
 }
 
@@ -524,46 +573,102 @@ function drawDCNodes(ctx, utcHour, snap, state, W, H, nodePositions, t) {
       ctx.textAlign = 'center';
       ctx.fillText(weatherEvent, nx, badgeY + 5);
       ctx.textAlign = 'left';
+
+      // ── Weather particles around the DC node ──
+      if (weatherEvent.includes('Storm')) {
+        // Rain drops falling around the node
+        const numDrops = 18;
+        for (let i = 0; i < numDrops; i++) {
+          const angle = (i / numDrops) * Math.PI * 2;
+          const dist = R + 12 + ((i * 31) % 30);
+          const rx = nx + Math.cos(angle) * dist;
+          const rainY = ny + ((t * 80 + i * 17) % 60) - 30;
+          const dropLen = 5 + Math.sin(i * 2.3) * 2;
+          const alpha = 0.3 + 0.2 * Math.sin(t * 3 + i);
+          ctx.beginPath();
+          ctx.moveTo(rx, rainY);
+          ctx.lineTo(rx - 0.5, rainY + dropLen);
+          ctx.strokeStyle = `rgba(120,160,255,${alpha})`;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+      } else if (weatherEvent.includes('Cold')) {
+        // Snowflakes drifting around the node
+        const numFlakes = 12;
+        for (let i = 0; i < numFlakes; i++) {
+          const angle = (t * 0.3 + i * 0.52) % (Math.PI * 2);
+          const dist = R + 15 + 20 * Math.sin(t * 0.5 + i * 1.7);
+          const fx = nx + Math.cos(angle) * dist;
+          const fy = ny + Math.sin(angle) * dist * 0.6 + Math.sin(t + i) * 5;
+          const alpha = 0.4 + 0.3 * Math.sin(t * 2 + i * 1.3);
+          ctx.fillStyle = `rgba(200,220,255,${alpha})`;
+          ctx.beginPath();
+          ctx.arc(fx, fy, 1.5 + Math.sin(i) * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (weatherEvent.includes('Heat')) {
+        // Heat shimmer waves rising from node
+        const numWaves = 6;
+        for (let i = 0; i < numWaves; i++) {
+          const waveY = ny + R + 5 - ((t * 15 + i * 12) % 40);
+          const waveW = R + 10 + Math.sin(t * 2 + i) * 8;
+          const alpha = 0.15 * (1 - ((t * 15 + i * 12) % 40) / 40);
+          ctx.beginPath();
+          ctx.moveTo(nx - waveW / 2, waveY);
+          ctx.quadraticCurveTo(nx, waveY - 3 * Math.sin(t * 3 + i), nx + waveW / 2, waveY);
+          ctx.strokeStyle = `rgba(255,140,50,${alpha})`;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
     }
 
     // ── Info card below node ──
-    const cardY = ny + R + 10;
-    const cardW = 110, cardH = 62;
+    const cardY = ny + R + 12;
+    const cardW = 120, cardH = 68;
     const cardX = nx - cardW / 2;
 
-    // Card background
-    ctx.fillStyle = 'rgba(10,14,26,0.85)';
-    ctx.strokeStyle = 'rgba(100,160,200,0.2)';
+    // Card glass background with shadow
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 4;
+    ctx.fillStyle = 'rgba(8,12,24,0.92)';
+    ctx.strokeStyle = `rgba(${rf > 0.5 ? '0,230,118' : '100,160,200'},0.2)`;
     ctx.lineWidth = 1;
-    roundRect(ctx, cardX, cardY, cardW, cardH, 6);
+    roundRect(ctx, cardX, cardY, cardW, cardH, 8);
+    ctx.restore();
+
+    // Accent top bar (green if renewable, amber if dirty)
+    ctx.fillStyle = rf > 0.5 ? 'rgba(0,230,118,0.6)' : carbon > 300 ? 'rgba(255,82,82,0.5)' : 'rgba(255,179,0,0.4)';
+    ctx.fillRect(cardX + 8, cardY + 2, cardW - 16, 1.5);
 
     // Readings
-    ctx.font = '600 9px JetBrains Mono, monospace';
+    ctx.font = '600 10px JetBrains Mono, monospace';
     ctx.textAlign = 'left';
-    const rx = cardX + 6;
-    let ry = cardY + 13;
+    const rx = cardX + 8;
+    let ry = cardY + 16;
 
-    // Solar
+    // Solar + Wind on one line
     ctx.fillStyle = solar > 100 ? '#FFB300' : '#64748b';
     ctx.fillText(`☀ ${Math.round(solar)} W/m²`, rx, ry);
-    ry += 12;
+    ry += 13;
 
-    // Wind
     ctx.fillStyle = wind > 4 ? '#00BCD4' : '#64748b';
     ctx.fillText(`💨 ${wind.toFixed(1)} m/s`, rx, ry);
-    ry += 12;
+    ry += 13;
 
-    // Carbon
+    // Carbon (main metric)
     ctx.fillStyle = carbon < 200 ? '#00e676' : carbon < 400 ? '#FFB300' : '#ff5252';
     ctx.fillText(`⚡ ${Math.round(carbon)} gCO₂`, rx, ry);
-    ry += 12;
+    ry += 13;
 
     // Renewable %  +  Util %
     ctx.fillStyle = rf > 0.5 ? '#00e676' : '#94a3b8';
     ctx.fillText(`♻ ${(rf * 100).toFixed(0)}%`, rx, ry);
     ctx.textAlign = 'right';
     ctx.fillStyle = util > 0.8 ? '#ff5252' : '#40c4ff';
-    ctx.fillText(`${(util * 100).toFixed(0)}% load`, cardX + cardW - 6, ry);
+    ctx.fillText(`${(util * 100).toFixed(0)}% load`, cardX + cardW - 8, ry);
     ctx.textAlign = 'left';
   }
 }

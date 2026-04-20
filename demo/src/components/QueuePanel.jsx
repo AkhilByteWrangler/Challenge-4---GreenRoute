@@ -12,8 +12,9 @@ export default function QueuePanel({ simState }) {
   const pinnedPct = totalJobs > 0 ? (stats.pinned / totalJobs * 100) : 0;
 
   return (
-    <div className="px-5 py-4 border-b border-border">
-      <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 mb-3 font-medium">
+    <div className="px-5 py-4 border-b border-white/[0.06]">
+      <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 mb-3 font-medium flex items-center gap-2">
+        <span className="w-1 h-3 rounded-full bg-accent-cyan" />
         Queue & Hold Decisions
       </h3>
 

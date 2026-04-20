@@ -4,7 +4,7 @@ import { ArrowRight } from 'lucide-react';
 
 export default function RoutingFeed({ feedItems }) {
   return (
-    <div className="px-5 py-4 border-b border-border">
+    <div className="px-5 py-4 border-b border-white/[0.06]">
       <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 mb-3 font-medium">
         Routing Feed
       </h3>
@@ -93,7 +93,7 @@ function FeedItem({ item }) {
         className={`font-mono text-[11px] shrink-0 ${isPositive ? 'text-accent-green' : 'text-accent-red'}`}
       >
         {isPositive ? '-' : '+'}
-        {(Math.abs(carbonSaved) / 1_000_000).toFixed(4)}t
+        {Math.abs(Math.round(carbonSaved))}g
       </span>
     </motion.div>
   );

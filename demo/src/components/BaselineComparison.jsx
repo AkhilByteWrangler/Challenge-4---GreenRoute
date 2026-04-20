@@ -19,7 +19,7 @@ export default function BaselineComparison({ simState }) {
     : '∞';
 
   return (
-    <div className="px-4 py-3 bg-bg-secondary/80 backdrop-blur border-t border-border">
+    <div className="px-4 py-3 bg-gradient-to-r from-[#0a0e1a] via-[#0d1220] to-[#0a0e1a] backdrop-blur border-t border-white/[0.06]">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 font-medium">
           Live Agent Comparison
@@ -39,8 +39,8 @@ export default function BaselineComparison({ simState }) {
               key={agent.key}
               className={`rounded-lg p-3 border transition-all ${
                 isWinner
-                  ? 'border-accent-green/40 bg-accent-green/5'
-                  : 'border-border bg-bg-card/50'
+                  ? 'border-accent-green/30 bg-accent-green/5 shadow-lg shadow-green-500/5'
+                  : 'border-white/[0.06] bg-white/[0.02]'
               }`}
             >
               <div className="flex items-center gap-1.5 mb-2">
@@ -64,9 +64,9 @@ export default function BaselineComparison({ simState }) {
                   initial={{ scale: 1.05 }}
                   animate={{ scale: 1 }}
                 >
-                  {(data.carbonSaved / 1_000_000).toFixed(3)}
+                  {Math.round(data.carbonSaved).toLocaleString()}
                 </motion.div>
-                <div className="text-[9px] text-slate-500 mt-0.5">tCO₂ saved</div>
+                <div className="text-[9px] text-slate-500 mt-0.5">g CO₂ saved</div>
               </div>
 
               {/* Carbon bar */}

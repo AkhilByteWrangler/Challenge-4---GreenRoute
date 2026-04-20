@@ -8,7 +8,6 @@ import RoutingFeed from './components/RoutingFeed';
 import DCStatus from './components/DCStatus';
 import QueuePanel from './components/QueuePanel';
 import LearningPanel from './components/LearningPanel';
-import ImpactBar from './components/ImpactBar';
 import BaselineComparison from './components/BaselineComparison';
 import Timeline from './components/Timeline';
 import TrainingInfo from './components/TrainingInfo';
@@ -66,6 +65,7 @@ export default function App() {
             simState={sim.simState}
             packets={sim.packets}
             advancePackets={sim.advancePackets}
+            paused={sim.paused}
           />
 
           {/* Training info overlay (floats on map) */}
@@ -80,18 +80,15 @@ export default function App() {
         </div>
 
         {/* Side panel — compact, scrollable */}
-        <div className="w-[340px] flex flex-col border-l border-border bg-bg-secondary/95 backdrop-blur overflow-y-auto">
+        <div className="w-[360px] flex flex-col border-l border-white/[0.06] bg-gradient-to-b from-[#0a0e1a]/98 to-[#0d1220]/98 backdrop-blur-xl overflow-y-auto">
           <LearningPanel simState={sim.simState} />
+          <QueuePanel simState={sim.simState} />
           <JobPanel job={sim.currentJob} />
           <DecisionPanel decision={sim.currentDecision} job={sim.currentJob} />
-          <QueuePanel simState={sim.simState} />
           <RoutingFeed feedItems={sim.feedItems} />
           <DCStatus simState={sim.simState} />
         </div>
       </div>
-
-      {/* Impact metrics */}
-      <ImpactBar simState={sim.simState} />
 
       {/* Live baseline comparison */}
       <BaselineComparison simState={sim.simState} />

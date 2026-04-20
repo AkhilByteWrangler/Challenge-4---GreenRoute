@@ -1,8 +1,8 @@
-import { Leaf, ShieldCheck, Zap } from 'lucide-react';
+import { Leaf, ShieldCheck, Zap, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function ImpactBar({ simState }) {
-  const { totalCarbonSaved, totalCostSaved, totalJobsProcessed, totalSLAViolations, totalRenewableSum } = simState;
+  const { totalCarbonSaved, totalJobsProcessed, totalSLAViolations, totalRenewableSum } = simState;
   const sla = totalJobsProcessed > 0
     ? ((1 - totalSLAViolations / totalJobsProcessed) * 100).toFixed(0)
     : '100';
@@ -11,44 +11,56 @@ export default function ImpactBar({ simState }) {
     : '0';
 
   return (
-    <div className="grid grid-cols-3 gap-3 px-5 py-3 bg-bg-secondary border-t border-border">
+    <div className="grid grid-cols-4 gap-2 px-4 py-2.5 bg-gradient-to-r from-[#0a0e1a] via-[#0d1220] to-[#0a0e1a] border-t border-white/[0.06]">
       <ImpactItem
-        icon={<Leaf className="w-4 h-4" />}
-        value={(totalCarbonSaved / 1_000_000).toFixed(3)}
-        unit="tCO₂ saved"
-        color="text-accent-green"
+        icon={<Leaf className="w-3.5 h-3.5" />}
+        value={Math.round(totalCarbonSaved).toLocaleString()}
+        unit="g CO₂ saved"
+        gradient="from-green-400 to-emerald-500"
+        bg="bg-green-500/8"
       />
       <ImpactItem
-        icon={<ShieldCheck className="w-4 h-4" />}
+        icon={<ShieldCheck className="w-3.5 h-3.5" />}
         value={`${sla}%`}
         unit="SLA compliance"
-        color="text-accent-cyan"
+        gradient="from-cyan-400 to-blue-500"
+        bg="bg-cyan-500/8"
       />
       <ImpactItem
-        icon={<Zap className="w-4 h-4" />}
+        icon={<Zap className="w-3.5 h-3.5" />}
         value={`${renew}%`}
         unit="renewable used"
-        color="text-accent-blue"
+        gradient="from-amber-400 to-orange-500"
+        bg="bg-amber-500/8"
+      />
+      <ImpactItem
+        icon={<Activity className="w-3.5 h-3.5" />}
+        value={totalJobsProcessed.toLocaleString()}
+        unit="jobs routed"
+        gradient="from-violet-400 to-purple-500"
+        bg="bg-violet-500/8"
       />
     </div>
   );
 }
 
-function ImpactItem({ icon, value, unit, color }) {
+function ImpactItem({ icon, value, unit, gradient, bg }) {
   return (
-    <div className="text-center">
-      <div className={`flex items-center justify-center gap-1.5 ${color}`}>
+    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg ${bg} border border-white/[0.04]`}>
+      <div className={`bg-gradient-to-br ${gradient} bg-clip-text text-transparent`}>
         {icon}
-        <motion.span
+      </div>
+      <div>
+        <motion.div
           key={value}
-          initial={{ scale: 1.1 }}
+          initial={{ scale: 1.05 }}
           animate={{ scale: 1 }}
-          className="text-xl font-bold font-mono"
+          className={`text-lg font-bold font-mono bg-gradient-to-r ${gradient} bg-clip-text text-transparent leading-none`}
         >
           {value}
-        </motion.span>
+        </motion.div>
+        <div className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">{unit}</div>
       </div>
-      <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{unit}</div>
     </div>
   );
 }

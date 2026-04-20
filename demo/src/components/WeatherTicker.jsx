@@ -44,9 +44,10 @@ export default function WeatherTicker() {
   if (activeEvents.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-1.5 bg-bg-primary/90 border-b border-border overflow-x-auto">
-      <span className="text-[10px] uppercase tracking-wider text-slate-500 shrink-0 font-semibold">
-        ⚠ WEATHER
+    <div className="flex items-center gap-2 px-4 py-1.5 bg-[#0a0e1a]/95 border-b border-white/[0.04] overflow-x-auto backdrop-blur-sm">
+      <span className="text-[10px] uppercase tracking-wider text-slate-500 shrink-0 font-semibold flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+        WEATHER
       </span>
       {activeEvents.map(({ locId, event, carbon, rf }) => {
         const style = getEventStyle(event);

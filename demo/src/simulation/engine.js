@@ -801,7 +801,6 @@ function initBaselineMetrics() {
 let _holdQueue = [];       // [{job, heldAt, holdSteps, reason}]
 let _jobQueue  = [];       // upcoming jobs waiting to be processed
 const HOLD_MAX_STEPS = 8;  // max ~1.2 hours sim time before forced release
-const HOLD_THRESHOLD = 0.25; // NN hold prob must exceed this
 
 // Queue composition counters (running totals for display)
 let _queueStats = { flexible: 0, semiFlex: 0, pinned: 0, held: 0, totalProcessed: 0 };
@@ -812,14 +811,22 @@ export function getQueueStats() { return { ..._queueStats, holdQueue: _holdQueue
 function shouldHold(job, snap, holdProb) {
   // Only flexible jobs can be held (they have long SLA headroom)
   if (job.type !== 'FLEXIBLE') return false;
-  // NN must want to hold
-  if (holdProb < HOLD_THRESHOLD) return false;
   // Don't hold if queue is already full
   if (_holdQueue.length >= 4) return false;
-  // Hold if current best carbon is bad (above median ~250)
+
+  // Check if any DC has an active negative weather event
+  const hasNegativeEvent = Object.values(_weatherEvents).some(
+    ev => ev && (ev.type === 'cold_snap' || ev.type === 'storm' || ev.type === 'heat_wave')
+  );
+
+  // Strategy 1: Hold during bad weather if NN has any hold signal (>5%)
+  if (hasNegativeEvent && holdProb > 0.05) return true;
+
+  // Strategy 2: Hold when carbon is elevated everywhere (>180) and NN wants to hold (>8%)
   const carbons = LOC_IDS.map(id => snap[id]?.carbon ?? 999);
   const bestNow = Math.min(...carbons);
-  if (bestNow > 220) return true;  // carbon is high → wait for better window
+  if (bestNow > 180 && holdProb > 0.08) return true;
+
   return false;
 }
 
@@ -932,11 +939,18 @@ export function simulationStep(prevState) {
     const carbons = LOC_IDS.map(id => _snapshot[id]?.carbon ?? 999);
     const bestNow = Math.min(...carbons);
     if (shouldHold(job, _snapshot, result.holdProb)) {
+      // Build reason based on what triggered the hold
+      const activeEvents = Object.entries(_weatherEvents)
+        .filter(([, ev]) => ev && (ev.type === 'cold_snap' || ev.type === 'storm' || ev.type === 'heat_wave'))
+        .map(([loc, ev]) => `${ev.type.replace('_', ' ')} at ${loc}`);
+      const holdReason = activeEvents.length > 0
+        ? `${activeEvents[0]} — grid carbon spiked (${Math.round(bestNow)}g), holding for cleaner window`
+        : `Carbon elevated (${Math.round(bestNow)}g) across all DCs — waiting for renewable window`;
       _holdQueue.push({
         job, heldAt: state.utcHour, holdSteps: 0,
         carbonAtHold: bestNow,
         holdProb: result.holdProb,
-        reason: `Carbon high (${Math.round(bestNow)}g) — waiting for renewable window`,
+        reason: holdReason,
       });
       held = true;
       _queueStats.held += 1;

@@ -41,7 +41,7 @@ export default function DecisionPanel({ decision, job }) {
           />
           <Row
             label="Saving"
-            value={`${saving > 0 ? '+' : ''}${(saving / 1_000_000).toFixed(4)}t CO₂`}
+            value={`${saving > 0 ? '+' : ''}${saving}g CO₂`}
             valueClass={saving > 0 ? 'text-accent-green' : 'text-accent-red'}
           />
 
@@ -94,7 +94,7 @@ export default function DecisionPanel({ decision, job }) {
 
 function Section({ title, children }) {
   return (
-    <div className="px-5 py-4 border-b border-border">
+    <div className="px-5 py-4 border-b border-white/[0.06]">
       <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 mb-3 font-medium">
         {title}
       </h3>
