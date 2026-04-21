@@ -152,7 +152,13 @@ class PPOAgent:
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Device selection: CUDA > MPS > CPU
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
 
         # Network
         self.network = ActorCritic(state_dim, num_actions, hidden_dims).to(self.device)

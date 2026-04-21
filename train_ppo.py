@@ -11,6 +11,10 @@ import os
 import json
 import time
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -431,7 +435,9 @@ def train_ppo(env, agent, num_episodes=2000, seed=42):
     episode_renew = []
     season_counts = {"winter": 0, "spring": 0, "summer": 0, "fall": 0}
 
-    print(f"\nTraining PPO for {num_episodes} episodes")
+    device = agent.device
+    device_name = "MPS GPU" if "mps" in str(device) else ("CUDA GPU" if "cuda" in str(device) else "CPU")
+    print(f"\nTraining PPO for {num_episodes} episodes on {device_name} ({device})", flush=True)
 
     start = time.time()
 
@@ -463,10 +469,10 @@ def train_ppo(env, agent, num_episodes=2000, seed=42):
         if (ep + 1) % 100 == 0:
             last_r = np.mean(episode_rewards[-100:])
             last_c = np.mean(episode_carbon[-100:])
-            print(f"Ep {ep+1}/{num_episodes}: Reward={last_r:.1f}, Carbon={last_c:.0f}g")
+            print(f"Ep {ep+1}/{num_episodes}: Reward={last_r:.1f}, Carbon={last_c:.0f}g", flush=True)
 
     train_time = time.time() - start
-    print(f"Done in {train_time:.1f}s")
+    print(f"Done in {train_time:.1f}s", flush=True)
 
     return metrics, episode_rewards, episode_carbon, episode_sla, episode_renew, train_time
 
@@ -496,9 +502,136 @@ def evaluate_baseline(agent, env, num_episodes=200, seed=42, label=""):
 
     print(f"  {label:12s} | Reward: {np.mean(rewards):8.1f} | "
           f"Carbon: {np.mean(carbon):7.0f}g | SLA: {np.mean(sla):.1%} | "
-          f"Renew: {np.mean(renew):.1%}")
+          f"Renew: {np.mean(renew):.1%}", flush=True)
 
     return metrics, rewards, carbon, sla, renew
+
+
+def plot_learning_curves(ppo_rewards, ppo_carbon, ppo_sla, ppo_renew, output_dir="outputs"):
+    """Generate learning curves plots."""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.patch.set_facecolor('#1a1a2e')
+    fig.suptitle('GreenRoute — PPO Training Curves', fontsize=16, fontweight='bold', color='white')
+    
+    # Smooth curves
+    window = 20
+    kernel = np.ones(window) / window
+    
+    metrics = [
+        (ppo_rewards, 'Episode Reward', 'green'),
+        (ppo_carbon, 'Carbon Saved (gCO₂)', 'yellow'),
+        (ppo_sla, 'SLA Compliance', 'red'),
+        (ppo_renew, 'Renewable Fraction', 'cyan'),
+    ]
+    
+    for ax, (data, title, color) in zip(axes.flat, metrics):
+        ax.set_facecolor('#16213e')
+        ax.plot(range(len(data)), data, alpha=0.2, color=color, linewidth=0.5)
+        if len(data) >= window:
+            smoothed = np.convolve(data, kernel, mode='valid')
+            ax.plot(range(window-1, len(data)), smoothed, color=color, linewidth=2)
+        ax.set_title(title, fontsize=12, color='white')
+        ax.set_xlabel('Episode', color='white')
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('white')
+        ax.spines['left'].set_color('white')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.grid(True, alpha=0.2)
+    
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'learning_curves.png')
+    fig.savefig(path, dpi=150, bbox_inches='tight', facecolor='#1a1a2e')
+    plt.close(fig)
+    print(f"  Learning curves saved to {path}", flush=True)
+
+
+def plot_agent_comparison(agent_results, output_dir="outputs"):
+    """Generate comparison bar charts."""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.patch.set_facecolor('#1a1a2e')
+    fig.suptitle('GreenRoute — Agent Comparison', fontsize=16, fontweight='bold', color='white')
+    
+    agents = list(agent_results.keys())
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][:len(agents)]
+    
+    metrics = [
+        ('avg_carbon_saved', 'Carbon Saved per Job (gCO₂)'),
+        ('avg_sla_compliance', 'SLA Compliance (%)'),
+        ('avg_renewable_fraction', 'Renewable Fraction (%)'),
+        ('avg_reward', 'Average Reward'),
+    ]
+    
+    for ax, (key, title) in zip(axes.flat, metrics):
+        ax.set_facecolor('#16213e')
+        values = [agent_results[a].get(key, 0) for a in agents]
+        bars = ax.bar(agents, values, color=colors, edgecolor='white', linewidth=1)
+        ax.set_title(title, fontsize=12, color='white')
+        ax.tick_params(colors='white')
+        ax.spines['bottom'].set_color('white')
+        ax.spines['left'].set_color('white')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        for bar, val in zip(bars, values):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{val:.1f}', ha='center', va='bottom', color='white', fontsize=10)
+    
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'agent_comparison.png')
+    fig.savefig(path, dpi=150, bbox_inches='tight', facecolor='#1a1a2e')
+    plt.close(fig)
+    print(f"  Agent comparison saved to {path}", flush=True)
+
+
+def print_metrics_table(agent_results, output_dir="outputs"):
+    """Print and save metrics comparison table."""
+    print("\n" + "="*80, flush=True)
+    print("EVALUATION RESULTS — Final Metrics".center(80), flush=True)
+    print("="*80, flush=True)
+    print(f"{'Agent':<15} | {'Carbon (gCO₂)':<15} | {'SLA %':<10} | {'Renewable %':<12} | {'Reward':<10}", flush=True)
+    print("-"*80, flush=True)
+
+    for agent_key, agent_name in [('random', 'Random'), ('greedy', 'Greedy'), ('ppo_eval', 'PPO (eval)')]:
+        if agent_key in agent_results:
+            r = agent_results[agent_key]
+            carbon = r.get('avg_carbon_saved', 0)
+            sla = r.get('avg_sla_compliance', 0) * 100
+            renewable = r.get('avg_renewable_fraction', 0) * 100
+            reward = r.get('avg_reward', 0)
+            print(f"{agent_name:<15} | {carbon:>13.0f} | {sla:>8.1f} | {renewable:>10.1f} | {reward:>8.1f}", flush=True)
+
+    print("="*80 + "\n", flush=True)
+
+    # Save as markdown table
+    md_table = "| Metric | Greedy | PPO (Ours) |\n"
+    md_table += "| ---|---|---|\n"
+
+    if 'greedy' in agent_results and 'ppo_eval' in agent_results:
+        greedy = agent_results['greedy']
+        ppo = agent_results['ppo_eval']
+
+        metrics = [
+            ('Carbon saved (gCO₂)', 'avg_carbon_saved', '{:.0f}'),
+            ('SLA compliance', 'avg_sla_compliance', '{:.1%}'),
+            ('Renewable usage', 'avg_renewable_fraction', '{:.1%}'),
+            ('Average reward', 'avg_reward', '{:.1f}'),
+        ]
+
+        for metric_name, key, fmt in metrics:
+            greedy_val = greedy.get(key, 0)
+            ppo_val = ppo.get(key, 0)
+            md_table += f"| {metric_name} | {fmt.format(greedy_val)} | {fmt.format(ppo_val)} |\n"
+
+    table_path = os.path.join(output_dir, 'metrics_table.md')
+    with open(table_path, 'w') as f:
+        f.write(md_table)
+    print(f"Metrics table saved to {table_path}\n", flush=True)
 
 
 def main():
@@ -511,20 +644,20 @@ def main():
 
     ppo_agent = PPOAgent(
         state_dim=67, num_actions=7, seed=SEED,
-        hidden_dims=[256, 256],     # wider network for more capacity
-        lr=3e-4,
+        hidden_dims=[512, 256],    
+        lr=5e-4,                    # higher learning rate
         gamma=0.99,
         gae_lambda=0.95,
         clip_eps=0.2,
-        entropy_coef=0.03,          # encourages exploration
-        value_coef=0.5,
+        entropy_coef=0.001,         # ultra-low to maximize exploitation 
+        value_coef=1.0,             # stronger value function learning
         max_grad_norm=0.5,
-        n_epochs=8,
-        n_steps=96,                 # 1 episode per update
-        batch_size=32,
+        n_epochs=20,                # more optimization per rollout
+        n_steps=4096,               # huge rollouts for clean advantages (was 2048)
+        batch_size=256,             # bigger batches for stable gradients
         anneal_lr=True,
-        total_timesteps=N_EPISODES * 96,
-        target_kl=0.02,
+        total_timesteps=N_EPISODES * 800,  # adjusted for huge rollouts
+        target_kl=0.01,             # stricter KL divergence
     )
 
     ppo_metrics, ppo_rewards, ppo_carbon, ppo_sla, ppo_renew, train_time = train_ppo(
@@ -617,6 +750,16 @@ def main():
 
     file_size = os.path.getsize(out_path) / 1024
     print(f"Exported to {out_path} ({file_size:.0f} KB)")
+
+    # Generate visualizations
+    print("\nGenerating visualizations...")
+    output_dir = os.path.join(os.path.dirname(__file__), "outputs")
+    
+    plot_learning_curves(ppo_rewards, ppo_carbon, ppo_sla, ppo_renew, output_dir)
+    plot_agent_comparison(export["final_metrics"], output_dir)
+    print_metrics_table(export["final_metrics"], output_dir)
+    
+    print("Training complete!")
 
 
 if __name__ == "__main__":
