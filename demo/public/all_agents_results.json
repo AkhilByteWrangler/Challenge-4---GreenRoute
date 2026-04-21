@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "trained_at": "2026-04-21 11:27:00 UTC",
+    "environment": "StochasticDataCentreEnv v2.0",
+    "state_dim": 67,
+    "action_dim": 7,
+    "agents_trained": [
+      "PPO",
+      "Q-Learning",
+      "DQN",
+      "Random",
+      "Greedy"
+    ],
+    "locations": [
+      "CA",
+      "TX",
+      "VA",
+      "OR",
+      "AZ"
+    ]
+  },
+  "final_metrics": {
+    "PPO": {
+      "avg_reward": 101262.2,
+      "avg_carbon_saved": 3124,
+      "avg_sla_compliance": 0.915,
+      "avg_renewable_fraction": 0.121
+    },
+    "Q-Learning": {
+      "avg_reward": -356.1,
+      "avg_carbon_saved": 0,
+      "avg_sla_compliance": 0.915,
+      "avg_renewable_fraction": 0.147
+    },
+    "DQN": {
+      "avg_reward": 131739.0,
+      "avg_carbon_saved": 4041,
+      "avg_sla_compliance": 0.915,
+      "avg_renewable_fraction": 0.136
+    },
+    "Random": {
+      "avg_reward": 4070.9,
+      "avg_carbon_saved": 141,
+      "avg_sla_compliance": 0.921,
+      "avg_renewable_fraction": 0.137
+    },
+    "Greedy": {
+      "avg_reward": 143994.5,
+      "avg_carbon_saved": 4412,
+      "avg_sla_compliance": 0.915,
+      "avg_renewable_fraction": 0.154
+    }
+  }
+}

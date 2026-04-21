@@ -1,6 +1,7 @@
-| Metric | Greedy | PPO (Ours) |
-| ---|---|---|
-| Carbon saved (gCO₂) | 4059 | 2930 |
-| SLA compliance | 91.7% | 91.6% |
-| Renewable usage | 14.5% | 11.8% |
-| Average reward | 1234.8 | 549.1 |
+| Agent | Carbon (gCO₂) | SLA % | Renewable % | Reward |
+|---|---|---|---|---|
+| PPO | 3124 | 91.5 | 12.1 | 101262.2 |
+| Q-Learning | 0 | 91.5 | 14.7 | -356.1 |
+| DQN | 4041 | 91.5 | 13.6 | 131739.0 |
+| Random | 141 | 92.1 | 13.7 | 4070.9 |
+| Greedy | 4412 | 91.5 | 15.4 | 143994.5 |
