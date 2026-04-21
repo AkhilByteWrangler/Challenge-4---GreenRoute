@@ -42,8 +42,8 @@ EVENT_TYPES = ["cold_snap", "storm", "heat_wave", "solar_boom"]
 class DataCentreEnv(gym.Env):
     """
     GreenRoute Data Centre Workload Routing Environment.
-    
-    Observation: 47-dimensional continuous vector
+
+    Observation: 67-dimensional continuous vector (47 base + 20 weather event indicators)
     Action: Discrete(7) — route to CA/TX/VA/OR/AZ, process locally, or hold
     """
     metadata = {"render_modes": ["human"]}

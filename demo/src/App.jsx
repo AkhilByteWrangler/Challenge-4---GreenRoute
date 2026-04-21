@@ -19,6 +19,8 @@ export default function App() {
   const [showIntro, setShowIntro] = useState(true);
   const [policyLoaded, setPolicyLoaded] = useState(false);
   const [showTraining, setShowTraining] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState('PPO');
+  const [agents, setAgents] = useState(['PPO', 'Q-Learning', 'DQN', 'Random', 'Greedy']);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved !== null ? JSON.parse(saved) : window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -27,7 +29,13 @@ export default function App() {
 
   // Load trained policy on mount
   useEffect(() => {
-    loadTrainedPolicy().then(() => setPolicyLoaded(isPolicyLoaded()));
+    loadTrainedPolicy().then((data) => {
+      setPolicyLoaded(isPolicyLoaded());
+      if (data?.metadata?.agents_trained) {
+        setAgents(data.metadata.agents_trained);
+        setSelectedAgent(data.metadata.agents_trained[0] || 'PPO');
+      }
+    });
   }, []);
 
   // Persist dark mode preference and apply to document
@@ -68,6 +76,9 @@ export default function App() {
         onShowTraining={() => setShowTraining((v) => !v)}
         darkMode={darkMode}
         setDarkMode={setDarkMode}
+        agents={agents}
+        selectedAgent={selectedAgent}
+        onAgentChange={setSelectedAgent}
       />
 
       {/* Weather event alerts */}

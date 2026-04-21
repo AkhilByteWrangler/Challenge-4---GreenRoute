@@ -304,24 +304,17 @@ let _ppoWeights = null;  // loaded neural network weights
 
 export async function loadTrainedPolicy() {
   try {
-    const res = await fetch('/trained_policy.json');
+    const res = await fetch('/all_agents_results.json');
     const data = await res.json();
-    _trainedPolicy = data.policy;
     _trainingMeta = data.metadata;
-    _trainingCurves = data.training_curves;
     _finalMetrics = data.final_metrics;
-    _ppoWeights = data.ppo_weights || null;
     _policyReady = true;
-    const ep = data.metadata.ppo_episodes || data.metadata.dqn_episodes || '?';
-    console.log(`[GreenRoute] PPO policy loaded (${ep} episodes, ${data.metadata.ppo_gradient_steps || '?'} gradient steps).`);
-    if (_ppoWeights) {
-      console.log(`[GreenRoute] Neural network: ${_ppoWeights.layers?.length || 0} backbone layers, `
-        + `${_ppoWeights.actor_layers?.length || 0} actor layers`);
-      _loadNNWeights();
-    }
+    const agents = data.metadata.agents_trained || ['PPO', 'Q-Learning', 'DQN'];
+    console.log(`[GreenRoute] Loaded results for ${agents.length} agents:`, agents);
+    console.log(`[GreenRoute] Final metrics:`, data.final_metrics);
     return data;
   } catch (e) {
-    console.warn('[GreenRoute] No offline policy — PPO from scratch:', e);
+    console.warn('[GreenRoute] Could not load results:', e);
     _policyReady = false;
     return null;
   }
