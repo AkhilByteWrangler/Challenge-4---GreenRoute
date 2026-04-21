@@ -11,7 +11,7 @@ export default function ImpactBar({ simState }) {
     : '0';
 
   return (
-    <div className="grid grid-cols-4 gap-2 px-4 py-2.5 bg-gradient-to-r from-[#0a0e1a] via-[#0d1220] to-[#0a0e1a] border-t border-white/[0.06]">
+    <div className="grid grid-cols-4 gap-2 px-4 py-2.5 bg-gradient-to-r from-[#0a0e1a] via-[#0d1220] to-[#0a0e1a] border-t border-slate-200 dark:border-white/[0.1]">
       <ImpactItem
         icon={<Leaf className="w-3.5 h-3.5" />}
         value={Math.round(totalCarbonSaved).toLocaleString()}

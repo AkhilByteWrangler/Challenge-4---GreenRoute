@@ -5,7 +5,7 @@ export default function DecisionPanel({ decision, job }) {
   if (!decision || !job) {
     return (
       <Section title="Agent Decision">
-        <p className="text-xs text-slate-500 italic">Awaiting decision...</p>
+        <p className="text-xs text-slate-500 dark:text-slate-600 italic">Awaiting decision...</p>
       </Section>
     );
   }
@@ -26,37 +26,42 @@ export default function DecisionPanel({ decision, job }) {
         >
           <Row
             label="Route to"
-            value={`${destLoc.name.toUpperCase()} ${destLoc.emoji}`}
-            valueClass="text-accent-green font-bold"
+            value={destLoc.name.toUpperCase()}
+            valueClass="text-green-600 dark:text-accent-green font-bold"
           />
           <Row
             label="Carbon at dest"
             value={`${Math.round(decision.destCarbon)} gCO₂/kWh`}
-            valueClass="text-accent-green"
+            valueClass="text-green-600 dark:text-accent-green"
           />
           <Row
             label="vs Origin"
             value={`${Math.round(decision.originCarbon)} gCO₂/kWh`}
-            valueClass="text-accent-red"
+            valueClass="text-red-600 dark:text-accent-red"
           />
           <Row
             label="Saving"
             value={`${saving > 0 ? '+' : ''}${saving}g CO₂`}
-            valueClass={saving > 0 ? 'text-accent-green' : 'text-accent-red'}
+            valueClass={saving > 0 ? 'text-green-600 dark:text-accent-green' : 'text-red-600 dark:text-accent-red'}
           />
 
           {/* Confidence bar */}
           <div className="mt-3">
-            <div className="w-full h-1.5 bg-bg-primary rounded-full overflow-hidden">
+            <div className="w-full h-1.5 bg-slate-200 dark:bg-white/[0.05] rounded overflow-hidden">
               <motion.div
-                className="h-full bg-accent-green rounded-full"
+                className="h-full bg-green-500 dark:bg-accent-green"
                 initial={{ width: 0 }}
                 animate={{ width: `${confPct}%` }}
                 transition={{ duration: 0.5 }}
+                role="progressbar"
+                aria-valuenow={confPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Agent confidence"
               />
             </div>
-            <div className="text-right text-[10px] text-slate-500 mt-1">
-              Confidence: <span className="text-slate-300 font-mono">{confPct}%</span>
+            <div className="text-right text-[10px] text-slate-600 dark:text-slate-500 mt-1">
+              Confidence: <span className="text-slate-900 dark:text-slate-100 font-mono">{confPct}%</span>
             </div>
           </div>
 
@@ -65,26 +70,26 @@ export default function DecisionPanel({ decision, job }) {
             <span
               className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium tracking-wide
                 ${decision.policySource === 'hold'
-                  ? 'bg-purple-500/15 text-purple-400'
+                  ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300'
                   : decision.policySource === 'ppo_confident'
-                  ? 'bg-accent-green/15 text-accent-green'
+                  ? 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-accent-green'
                   : decision.policySource === 'ppo_exploring'
-                  ? 'bg-accent-cyan/15 text-accent-cyan'
+                  ? 'bg-cyan-100 dark:bg-cyan-950/40 text-cyan-700 dark:text-accent-cyan'
                   : decision.policySource === 'constraint'
-                  ? 'bg-accent-amber/15 text-accent-amber'
-                  : 'bg-slate-500/15 text-slate-400'
+                  ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-accent-amber'
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
                 }`}
             >
-              {decision.policySource === 'hold' ? '⏸ Holding — Waiting for Better Window' :
-               decision.policySource === 'ppo_confident' ? '🧠 PPO Policy (Confident)' :
-               decision.policySource === 'ppo_exploring' ? '🔍 PPO Policy (Exploring)' :
-               decision.policySource === 'constraint' ? '🔒 Hard Constraint' : 'Fallback'}
+              {decision.policySource === 'hold' ? 'Holding - Waiting for Better Window' :
+               decision.policySource === 'ppo_confident' ? 'PPO Policy (Confident)' :
+               decision.policySource === 'ppo_exploring' ? 'PPO Policy (Exploring)' :
+               decision.policySource === 'constraint' ? 'Hard Constraint' : 'Fallback'}
             </span>
           </div>
 
           {/* Reasoning */}
-          <div className="mt-3 px-3 py-2.5 bg-bg-primary rounded-md border-l-2 border-accent-green">
-            <p className="text-xs text-slate-400 leading-relaxed">{decision.reason}</p>
+          <div className="mt-3 px-3 py-2.5 bg-green-50 dark:bg-green-950/20 rounded border-l-2 border-green-500 dark:border-accent-green">
+            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">{decision.reason}</p>
           </div>
         </motion.div>
       </AnimatePresence>
@@ -94,8 +99,8 @@ export default function DecisionPanel({ decision, job }) {
 
 function Section({ title, children }) {
   return (
-    <div className="px-5 py-4 border-b border-white/[0.06]">
-      <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-500 mb-3 font-medium">
+    <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.1]">
+      <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-600 dark:text-slate-500 mb-3 font-semibold">
         {title}
       </h3>
       {children}
@@ -106,7 +111,7 @@ function Section({ title, children }) {
 function Row({ label, value, valueClass = '' }) {
   return (
     <div className="flex justify-between items-center py-1 text-sm">
-      <span className="text-slate-400">{label}</span>
+      <span className="text-slate-700 dark:text-slate-400">{label}</span>
       <span className={`font-semibold font-mono text-xs ${valueClass}`}>{value}</span>
     </div>
   );

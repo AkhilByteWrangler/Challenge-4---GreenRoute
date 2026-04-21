@@ -1,83 +1,99 @@
-import { Sun, Pause, Play, RotateCcw, Brain, ChevronDown, Clock } from 'lucide-react';
+import { Sun, Moon, Pause, Play, RotateCcw, Brain, Clock } from 'lucide-react';
 
 const SPEED_LABELS = ['', 'Slow', '', 'Normal', '', 'Fast', '', 'Faster', ''];
 
-export default function Header({ simState, paused, speed, setSpeed, togglePause, reset, policyLoaded, onShowTraining }) {
+export default function Header({ simState, paused, speed, setSpeed, togglePause, reset, policyLoaded, onShowTraining, darkMode, setDarkMode }) {
   const h = Math.floor(simState.utcHour);
   const m = Math.floor((simState.utcHour % 1) * 60);
   const clock = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} UTC`;
 
   return (
-    <header className="flex items-center justify-between px-6 py-2.5 border-b border-white/[0.06] bg-gradient-to-r from-[#0a0e1a] via-[#0d1220] to-[#0a0e1a] backdrop-blur-xl">
+    <header className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-white/[0.1] bg-white dark:bg-slate-950">
       {/* Logo */}
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-green/20 to-accent-green/5 flex items-center justify-center border border-accent-green/20">
+        <div className="w-8 h-8 rounded-lg bg-green-50 dark:bg-green-950/30 flex items-center justify-center border border-green-300 dark:border-accent-green/20">
           <Sun className="w-4.5 h-4.5 text-accent-green" />
         </div>
         <div>
-          <span className="text-base font-bold tracking-tight bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">GreenRoute</span>
-          <span className="text-[10px] text-slate-500 ml-2 hidden sm:inline">Move Computation to Energy</span>
+          <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white">GreenRoute</span>
+          <span className="text-[10px] text-slate-600 dark:text-slate-500 ml-2 hidden sm:inline">Move Computation to Energy</span>
         </div>
       </div>
 
       {/* Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* Policy badge */}
-        <button
-          onClick={onShowTraining}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-all
+        <div
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-medium border
             ${policyLoaded
-              ? 'bg-accent-green/8 border-accent-green/20 text-accent-green hover:bg-accent-green/15'
-              : 'bg-accent-amber/10 border-accent-amber/30 text-accent-amber animate-pulse'
+              ? 'bg-green-100 dark:bg-green-950/40 border-green-300 dark:border-accent-green/30 text-green-700 dark:text-accent-green'
+              : 'bg-amber-100 dark:bg-amber-950/40 border-amber-300 dark:border-accent-amber/30 text-amber-700 dark:text-accent-amber'
             }`}
         >
-          <Brain className="w-3.5 h-3.5" />
-          {policyLoaded ? 'PPO Agent' : 'Loading...'}
-          <ChevronDown className="w-3 h-3 opacity-50" />
-        </button>
+          <Brain className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="hidden sm:inline">{policyLoaded ? 'PPO Agent' : 'Loading...'}</span>
+        </div>
 
         {/* Speed control */}
-        <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-          <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Speed</span>
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded border border-slate-300 dark:border-white/[0.1] bg-slate-50 dark:bg-slate-50 dark:bg-white/[0.02]">
+          <label htmlFor="speed-slider" className="text-[10px] text-slate-600 dark:text-slate-500 font-medium uppercase tracking-wider">Speed</label>
           <input
+            id="speed-slider"
             type="range"
             min={1}
             max={8}
             value={speed}
             onChange={(e) => setSpeed(Number(e.target.value))}
-            className="w-20 accent-accent-green h-1"
+            aria-label="Simulation speed"
+            className="w-20 h-1"
           />
-          <span className="text-[10px] text-slate-400 font-mono w-10">{SPEED_LABELS[speed] || `${speed}x`}</span>
+          <span className="text-[10px] text-slate-600 dark:text-slate-400 font-mono w-10 text-right">{SPEED_LABELS[speed] || `${speed}x`}</span>
         </div>
 
         {/* Pause/Resume */}
         <button
           onClick={togglePause}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium border transition-all
+          aria-label={paused ? 'Resume simulation' : 'Pause simulation'}
+          className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded text-sm font-medium border transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-950
             ${paused
-              ? 'bg-accent-green text-[#0a0e1a] border-accent-green shadow-lg shadow-accent-green/20'
-              : 'bg-white/[0.04] text-slate-200 border-white/[0.08] hover:border-accent-green/40 hover:text-accent-green'
+              ? 'bg-accent-green text-white border-accent-green hover:bg-green-600'
+              : 'bg-white dark:bg-white/[0.05] text-slate-900 dark:text-slate-200 border-slate-300 dark:border-white/[0.1] hover:border-accent-green dark:hover:border-accent-green/50'
             }`}
         >
-          {paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-          {paused ? 'Resume' : 'Pause'}
+          {paused ? <Play className="w-3.5 h-3.5 flex-shrink-0" /> : <Pause className="w-3.5 h-3.5 flex-shrink-0" />}
+          <span className="hidden sm:inline">{paused ? 'Resume' : 'Pause'}</span>
         </button>
 
         {/* Reset */}
         <button
           onClick={reset}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-white/[0.06]
-                     bg-white/[0.03] text-slate-400 hover:border-red-400/30 hover:text-red-400 transition-all"
+          aria-label="Reset simulation"
+          title="Reset simulation"
+          className="flex items-center justify-center p-2 rounded border border-slate-300 dark:border-white/[0.1]
+                     bg-white dark:bg-slate-50 dark:bg-white/[0.02] text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400
+                     hover:border-red-400 dark:hover:border-red-400/30 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-950"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
+          <RotateCcw className="w-4 h-4" />
+        </button>
+
+        {/* Dark mode toggle */}
+        <button
+          onClick={() => setDarkMode(!darkMode)}
+          aria-label={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
+          title={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
+          className="flex items-center justify-center p-2 rounded border border-slate-300 dark:border-white/[0.1]
+                     bg-white dark:bg-slate-50 dark:bg-white/[0.02] text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-accent-amber
+                     hover:border-amber-400 dark:hover:border-accent-amber/30 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-950"
+        >
+          {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
         {/* Clock */}
-        <div className="flex items-center gap-2 pl-3 border-l border-white/[0.06]">
-          <Clock className="w-3.5 h-3.5 text-accent-amber/70" />
+        <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-300 dark:border-white/[0.1]">
+          <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-accent-amber/70" />
           <div className="text-right">
-            <div className="font-mono text-sm text-accent-amber font-medium">{clock}</div>
-            <div className="text-[9px] text-slate-500">Day {simState.day}</div>
+            <div className="font-mono text-sm text-slate-900 dark:text-accent-amber font-medium">{clock}</div>
+            <div className="text-[9px] text-slate-600 dark:text-slate-500">Day {simState.day}</div>
           </div>
         </div>
       </div>

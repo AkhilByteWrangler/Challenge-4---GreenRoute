@@ -20,7 +20,7 @@ export default function useSimulation() {
     const { state, job, decision, carbonSaved, held, released } = simulationStep(stateRef.current);
     setSimState(state);
     setCurrentJob(job);
-    setCurrentDecision(held ? { ...decision, policySource: 'hold', reason: `⏸ HELD — carbon too high, waiting for renewable window. ${decision.reason}` } : decision);
+    setCurrentDecision(held ? { ...decision, policySource: 'hold', reason: `HELD - carbon too high, waiting for renewable window. ${decision.reason}` } : decision);
 
     // Add feed item (mark held jobs)
     feedIdRef.current += 1;

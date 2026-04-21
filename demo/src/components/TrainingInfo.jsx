@@ -5,7 +5,6 @@ import { useRef, useEffect } from 'react';
 export default function TrainingInfo({ meta, metrics, curves, onClose }) {
   const canvasRef = useRef(null);
 
-  // Draw training curve on canvas
   useEffect(() => {
     if (!curves?.dqn?.rewards || !canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -18,18 +17,15 @@ export default function TrainingInfo({ meta, metrics, curves, onClose }) {
     canvas.style.height = H + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Background
     ctx.fillStyle = '#0a0e1a';
     ctx.fillRect(0, 0, W, H);
 
-    // Grid
     ctx.strokeStyle = 'rgba(100,116,139,0.1)';
     ctx.lineWidth = 1;
     for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W, y); ctx.stroke(); }
     for (let x = 40; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
 
     const drawCurve = (data, colour, smooth = 20) => {
-      // Moving average
       const ma = [];
       for (let i = 0; i < data.length; i++) {
         const start = Math.max(0, i - smooth + 1);
@@ -51,22 +47,18 @@ export default function TrainingInfo({ meta, metrics, curves, onClose }) {
       ctx.stroke();
     };
 
-    // DQN reward curve
     drawCurve(curves.dqn.rewards, '#00e676');
-    // Q-learning reward curve
     drawCurve(curves.q_learning.rewards, '#ffb300');
 
-    // Legend
     ctx.fillStyle = '#00e676'; ctx.fillRect(W - 140, 10, 12, 3);
     ctx.fillStyle = '#94a3b8'; ctx.font = '10px Inter'; ctx.fillText('DQN', W - 124, 15);
     ctx.fillStyle = '#ffb300'; ctx.fillRect(W - 140, 22, 12, 3);
     ctx.fillStyle = '#94a3b8'; ctx.fillText('Q-Learning', W - 124, 27);
 
-    // Axes
     ctx.fillStyle = '#64748b'; ctx.font = '9px JetBrains Mono';
     ctx.fillText('0', 18, H - 15);
     ctx.fillText(String(curves.dqn.rewards.length), W - 30, H - 15);
-    ctx.fillText('Episode →', W / 2 - 20, H - 5);
+    ctx.fillText('Episode', W / 2 - 20, H - 5);
     ctx.save();
     ctx.translate(12, H / 2);
     ctx.rotate(-Math.PI / 2);
@@ -78,7 +70,7 @@ export default function TrainingInfo({ meta, metrics, curves, onClose }) {
     return (
       <motion.div
         initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-        className="absolute top-4 left-4 z-40 bg-bg-card border border-border rounded-xl p-6 shadow-2xl w-[300px]"
+        className="absolute top-4 left-4 z-40 bg-slate-50 dark:bg-white/[0.02] border border-border rounded-xl p-6 shadow-2xl w-[300px]"
       >
         <p className="text-sm text-slate-400">No training data available.</p>
         <button onClick={onClose} className="mt-3 text-xs text-accent-green hover:underline">Close</button>
@@ -89,7 +81,7 @@ export default function TrainingInfo({ meta, metrics, curves, onClose }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-      className="absolute top-4 left-4 z-40 bg-bg-card/95 backdrop-blur-md border border-border rounded-xl shadow-2xl w-[580px] max-h-[85vh] overflow-y-auto"
+      className="absolute top-4 left-4 z-40 bg-slate-50 dark:bg-white/[0.02]/95 backdrop-blur-md border border-border rounded-xl shadow-2xl w-[580px] max-h-[85vh] overflow-y-auto"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">

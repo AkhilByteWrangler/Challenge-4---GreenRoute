@@ -7,21 +7,21 @@ export default function NodeTooltip({ data, onClose }) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0 }}
-      className="absolute z-50 bg-bg-card/95 backdrop-blur-md border border-border rounded-lg p-4 shadow-2xl min-w-[240px] pointer-events-none"
+      className="absolute z-50 bg-slate-50 dark:bg-white/[0.02]/95 backdrop-blur-md border border-border rounded-lg p-4 shadow-2xl min-w-[240px] pointer-events-none"
       style={{ left: x, top: Math.max(y, 10) }}
     >
       <div className="font-bold text-sm mb-1" style={{ color: loc.colour }}>
-        {loc.emoji} {loc.name}
+        {loc.name}
       </div>
       <div className="text-[10px] text-slate-500 mb-2">
         Primary: {loc.primary} · PUE {loc.basePUE} · {loc.capacity} TFLOPS
       </div>
       <div className="space-y-1.5">
-        <BarRow label="☀ Solar" value={`${Math.round(solar)} W/m²`} pct={solar / 1000} color="#FFB300" />
-        <BarRow label="💨 Wind" value={`${wind.toFixed(1)} m/s`} pct={wind / 20} color="#00BCD4" />
-        <BarRow label="♻ Renewable" value={`${(rf * 100).toFixed(0)}%`} pct={rf} color={rf > 0.5 ? '#00e676' : '#ff5252'} />
-        <BarRow label="⚡ Carbon" value={`${Math.round(carbon)} gCO₂`} pct={Math.min(1, carbon / 500)} color={carbon < 200 ? '#00e676' : carbon < 400 ? '#FFB300' : '#ff5252'} />
-        <BarRow label="📊 Load" value={`${(util * 100).toFixed(0)}%`} pct={util} color={util > 0.8 ? '#ff5252' : '#40c4ff'} />
+        <BarRow label="Solar" value={`${Math.round(solar)} W/m²`} pct={solar / 1000} color="#FFB300" />
+        <BarRow label="Wind" value={`${wind.toFixed(1)} m/s`} pct={wind / 20} color="#00BCD4" />
+        <BarRow label="Renewable" value={`${(rf * 100).toFixed(0)}%`} pct={rf} color={rf > 0.5 ? '#00e676' : '#ff5252'} />
+        <BarRow label="Carbon" value={`${Math.round(carbon)} gCO₂`} pct={Math.min(1, carbon / 500)} color={carbon < 200 ? '#00e676' : carbon < 400 ? '#FFB300' : '#ff5252'} />
+        <BarRow label="Load" value={`${(util * 100).toFixed(0)}%`} pct={util} color={util > 0.8 ? '#ff5252' : '#40c4ff'} />
       </div>
     </motion.div>
   );

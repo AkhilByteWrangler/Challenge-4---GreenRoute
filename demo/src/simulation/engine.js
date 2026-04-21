@@ -1,8 +1,6 @@
 import { LOCATIONS, LOC_IDS } from './locations';
 
-// ═══════════════════════════════════════════════════════════════
-// WEATHER SYSTEM — moving fronts that cross the continental US
-// ═══════════════════════════════════════════════════════════════
+// Weather system with moving weather fronts
 
 function createWeatherFront(seed) {
   const r = () => { seed = (seed * 16807 + 0) % 2147483647; return seed / 2147483647; };
@@ -72,12 +70,7 @@ function weatherInfluence(locId) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// WEATHER EVENTS — cold snaps, storms, heat waves, solar booms
-//
-// Accelerated timeline: events fire every ~3-6 sim hours so they
-// are visible in a class demo that runs for a few minutes.
-// ═══════════════════════════════════════════════════════════════
+// Weather events: cold snaps, storms, heat waves, solar booms
 
 // Active weather events: { locId: { type, remaining, intensity } }
 let _weatherEvents = {};
@@ -132,34 +125,32 @@ function applyWeatherEvent(locId, solar, wind, hydro, carbon) {
       // Heavy clouds/snow kill solar, heating demand spikes carbon
       s *= 0.10;         // near-zero solar (snow/overcast)
       w *= 1.2;          // cold wind picks up slightly
-      c *= 3.0;          // heating demand → heavy fossil generation
-      label = '🥶 Cold Snap';
+      c *= 3.0;          // heating demand increases carbon
+      label = 'Cold Snap';
       break;
     case 'storm':
       s *= 0.05;         // near-zero solar
       w = Math.min(25, w * 2.5 + 8); // very high wind (but turbines may curtail)
       if (w > 18) w *= 0.4; // curtailment above cut-off
       c *= 2.5;          // grid instability
-      label = '⛈️ Storm';
+      label = 'Storm';
       break;
     case 'heat_wave':
       s *= 1.1;          // slightly more sun (clear skies)
       w *= 0.3;          // stagnant air
-      c *= 2.5;          // AC demand spikes → more fossil
-      label = '🔥 Heat Wave';
+      c *= 2.5;          // AC demand spikes increase carbon
+      label = 'Heat Wave';
       break;
     case 'solar_boom':
       s = Math.min(1000, s * 1.8 + 200); // exceptional solar
       c *= 0.3;          // very low carbon (grid flooded with solar)
-      label = '☀️ Solar Boom';
+      label = 'Solar Boom';
       break;
   }
   return { solar: Math.max(0, s), wind: Math.max(0, w), hydro: Math.max(0, h), carbon: Math.max(20, c), eventLabel: label };
 }
 
-// ═══════════════════════════════════════════════════════════════
 // SENSOR SNAPSHOT — computed once per timestep from weather
-// ═══════════════════════════════════════════════════════════════
 
 let _snapshot = null;
 export function getSnapshot() { return _snapshot; }
@@ -210,7 +201,7 @@ function computeSnapshot(utcHour, utilisations) {
     const windFloodBonus = wind > 8 ? (wind - 8) / 12 * loc.baseCarbonIntensity * 0.3 : 0;
     let carbon = Math.max(20, loc.baseCarbonIntensity * demandFactor - renewOffset - solarFloodBonus - windFloodBonus + (Math.random() - 0.5) * 12);
 
-    // ── Apply weather events (cold snaps, storms, etc.) ──
+    // Apply weather events (cold snaps, storms, etc.)
     const evResult = applyWeatherEvent(locId, solar, wind, hydro, carbon);
     solar = evResult.solar;
     wind = evResult.wind;
@@ -235,7 +226,7 @@ function computeSnapshot(utcHour, utilisations) {
       cloudCover: wx.cloudCover,
       rain: wx.rain,
       windExtra: wx.windExtra,
-      weatherEvent: evResult.eventLabel,  // null or '🥶 Cold Snap' etc.
+      weatherEvent: evResult.eventLabel,  // null or 'Cold Snap', 'Storm', etc.
     };
   }
   return snap;
@@ -248,9 +239,7 @@ export function getRenewableFraction(utcHour, locId) { return _snapshot?.[locId]
 export function getCarbonIntensity(utcHour, locId)   { return _snapshot?.[locId]?.carbon ?? 300; }
 export function getEnergyCost(utcHour, locId)        { return _snapshot?.[locId]?.cost ?? 0.10; }
 
-// ═══════════════════════════════════════════════════════════════
 // JOB GENERATOR
-// ═══════════════════════════════════════════════════════════════
 
 const JOB_NAMES_FLEX = [
   'ML Training Batch', 'Batch Analytics Pipeline', 'Database Backup',
@@ -298,9 +287,7 @@ export function generateJob(utcHour) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// TRAINED POLICY LOADER (training curves / metadata for UI)
-// ═══════════════════════════════════════════════════════════════
+// Load trained policy and metadata
 
 let _trainedPolicy = null;
 let _trainingMeta = null;
@@ -340,24 +327,11 @@ export async function loadTrainedPolicy() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PPO (PROXIMAL POLICY OPTIMIZATION) AGENT
-//
-// Pre-trained offline on 3000 episodes with stochastic weather
-// (4 seasons × 6 weather regimes × cold snaps × storms).
-//
-// Architecture (loaded from trained_policy.json):
-//   Backbone: 67 → 256 (LayerNorm+Tanh) → 256 (LayerNorm+Tanh)
-//   Actor:    256 → 64 (Tanh) → 7 (softmax)     [take 1-5 for CA,TX,VA,OR,AZ]
-//   Critic:   256 → 64 (Tanh) → 1                [V(s) value estimate]
-//
-// In the browser we run INFERENCE ONLY — no learning.
-// The network was trained with PPO (GAE λ=0.95, clip ε=0.2, 10 epochs).
-// ═══════════════════════════════════════════════════════════════
+// PPO agent: pretrained offline, inference only
 
 const N_ACTIONS = LOC_IDS.length;  // 5
 
-// ── Loaded NN layers (set by _loadNNWeights) ──
+// Loaded NN layers
 let _nnBackbone = [];   // [{type, weight, bias, eps?}]
 let _nnActor = [];      // [{type, weight, bias}]
 let _nnCritic = [];     // [{type, weight, bias}]
@@ -370,7 +344,7 @@ let _recentActions = [];  // rolling window of last 30 actions
 const RECENT_WINDOW = 30;
 let _policyEntropy = 0;
 
-// ── Learning metrics (exported for UI) ──
+// Learning metrics
 export function getLearningMetrics() {
   const recent = _rewardHistory.slice(-50);
   const avgReward = recent.length > 0 ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
@@ -388,7 +362,6 @@ export function getLearningMetrics() {
   };
 }
 
-// ── Load pre-trained weights from JSON ──
 function _loadNNWeights() {
   if (!_ppoWeights) return;
   _nnBackbone = (_ppoWeights.layers || []).map(l => ({
@@ -421,14 +394,13 @@ function initPPO() {
 const PUE_MAP = { CA: 1.15, TX: 1.25, VA: 1.20, OR: 1.10, AZ: 1.30 };
 const CAP_MAP = { CA: 5000, TX: 4500, VA: 6000, OR: 3500, AZ: 4000 };
 
-// ── Build 67-dim state vector (matches Python env exactly) ──
 // 35 per-location + 20 weather event indicators + 12 global
 const EVENT_TYPES = ['cold_snap', 'storm', 'heat_wave', 'solar_boom'];
 const EVENT_LABEL_MAP = {
-  '🥶 Cold Snap': 'cold_snap',
-  '⛈️ Storm': 'storm',
-  '🔥 Heat Wave': 'heat_wave',
-  '☀️ Solar Boom': 'solar_boom',
+  'Cold Snap': 'cold_snap',
+  'Storm': 'storm',
+  'Heat Wave': 'heat_wave',
+  'Solar Boom': 'solar_boom',
 };
 
 function extractFeatures47(snap, originId) {
@@ -505,7 +477,6 @@ function extractFeatures47(snap, originId) {
   return f;  // length = 67 (35 + 20 + 12)
 }
 
-// ── NN inference primitives ──
 function _linearForward(layer, input) {
   // layer.weight: [outDim][inDim], layer.bias: [outDim]
   const W = layer.weight;
@@ -547,7 +518,6 @@ function _softmax(logits) {
   return exps.map(x => x / sum);
 }
 
-// ── Full forward pass through backbone → actor/critic ──
 function nnForward(features) {
   // Backbone: [Linear, LayerNorm, (Tanh implied)] × N
   let x = features;
@@ -562,7 +532,7 @@ function nnForward(features) {
   }
   const backbone_out = x;
 
-  // Actor head: Linear → Tanh → Linear → softmax
+  // Actor head: Linear, Tanh, Linear, softmax
   let actor_x = backbone_out;
   for (let i = 0; i < _nnActor.length; i++) {
     actor_x = _linearForward(_nnActor[i], actor_x);
@@ -571,7 +541,7 @@ function nnForward(features) {
   // All 7 logits: [local=0, CA=1, TX=2, VA=3, OR=4, AZ=5, hold=6]
   const allLogits = actor_x;
 
-  // Route actions (1-5) → browser LOC_IDS [CA, TX, VA, OR, AZ]
+  // Route actions (1-5) map to browser LOC_IDS [CA, TX, VA, OR, AZ]
   const routeLogits = allLogits.slice(1, 1 + N_ACTIONS);
   const routeProbs = _softmax(routeLogits);
 
@@ -583,7 +553,7 @@ function nnForward(features) {
   const full7 = [localLogit, ...routeLogits, holdLogit];
   const fullProbs = _softmax(full7);
 
-  // Critic head: Linear → Tanh → Linear
+  // Critic head: Linear, Tanh, Linear
   let critic_x = backbone_out;
   for (let i = 0; i < _nnCritic.length; i++) {
     critic_x = _linearForward(_nnCritic[i], critic_x);
@@ -601,7 +571,6 @@ function nnForward(features) {
   };
 }
 
-// ── Greedy fallback (when NN not loaded) ──
 function greedyFallback(snap, feasible) {
   let best = feasible[0], bestCarbon = Infinity;
   for (const a of feasible) {
@@ -611,7 +580,6 @@ function greedyFallback(snap, feasible) {
   return best;
 }
 
-// ── Compute reward (for reward tracking display) ──
 function computeReward(snap, originId, destId) {
   const origin = snap[originId];
   const dest = snap[destId];
@@ -624,9 +592,7 @@ function computeReward(snap, originId, destId) {
   return carbonSave * 2.5 + renewBonus - equityPen;
 }
 
-// ═══════════════════════════════════════════════════════════════
 // AGENT DECISION — Pre-trained PPO neural network
-// ═══════════════════════════════════════════════════════════════
 
 export function agentDecide(job, snap) {
   if (job.type === 'PINNED') {
@@ -659,7 +625,7 @@ export function agentDecide(job, snap) {
   let action, prob, value, probs, routeProbs, localProb = 0, holdProb = 0;
 
   if (_nnLoaded) {
-    // ── Neural network inference (all 7 actions) ──
+    // Neural network inference (all 7 actions)
     const features = extractFeatures47(snap, job.origin);
     const result = nnForward(features);
     routeProbs = result.routeProbs;
@@ -677,7 +643,7 @@ export function agentDecide(job, snap) {
     action = bestRouteAction;
     prob = bestRouteProb;
 
-    // ── Carbon-aware safety layer ──
+    // Carbon-aware safety layer
     // Only override the NN when the chosen DC is dramatically worse
     // than the best available. A 1.5× threshold lets the NN spread
     // load across DCs that are reasonably clean, while still catching
@@ -743,7 +709,7 @@ export function agentDecide(job, snap) {
       : destLoc.primary === 'wind' && ds.wind > 5
       ? `Wind ${ds.wind.toFixed(1)} m/s`
       : `Low carbon ${Math.round(ds.carbon)} gCO₂`;
-    reason += `→ ${destLoc.name}: ${tag}. ♻${(ds.rf * 100).toFixed(0)}%.`;
+    reason += ` to ${destLoc.name}: ${tag}. Renewable ${(ds.rf * 100).toFixed(0)}%.`;
   }
   reason += ` [Step ${_stepCount}, 5000ep NN]`;
 
@@ -756,12 +722,10 @@ export function agentDecide(job, snap) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
 // BASELINE AGENT (shadow — run on same job, don't affect state)
 //
 // Random: picks a random DC
 // This lets us show "what would have happened without RL"
-// ═══════════════════════════════════════════════════════════════
 
 function randomBaseline(job, snap) {
   // Uniform random among feasible DCs
@@ -792,9 +756,7 @@ function initBaselineMetrics() {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
 // HOLD QUEUE & QUEUE COMPOSITION
-// ═══════════════════════════════════════════════════════════════
 
 let _holdQueue = [];       // [{job, heldAt, holdSteps, reason}]
 let _jobQueue  = [];       // upcoming jobs waiting to be processed
@@ -850,9 +812,7 @@ function releaseHeldJobs(snap) {
   return released;
 }
 
-// ═══════════════════════════════════════════════════════════════
 // SIMULATION STEP
-// ═══════════════════════════════════════════════════════════════
 
 export function createInitialState() {
   const utilisations = {};
@@ -956,7 +916,7 @@ export function simulationStep(prevState) {
     }
   }
 
-  // ── 4b. Shadow baseline decision (same job, same snapshot) ──
+  // 4b. Shadow baseline decision (same job, same snapshot)
   const randomDest = randomBaseline(job, _snapshot);
 
   const originCarbon = _snapshot[job.origin].carbon;
