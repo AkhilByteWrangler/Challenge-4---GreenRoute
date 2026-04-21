@@ -1,8 +1,8 @@
-# GreenRoute — *Don't Move Energy to Computation. Move Computation to Energy.*
+# GreenRoute - Carbon-aware workload routing with RL
 
 ### Reinforcement Learning for Carbon-Aware Workload Routing Across Geographically Distributed Data Centres
 
-> **Challenge 4** · A system that learns *where* and *when* to run your code — chasing the sun, riding the wind, and waiting out the storm.
+Learns *where* and *when* to run jobs across multiple data centres, including a **hold** action for time-shifting.
 
 ---
 
@@ -10,35 +10,29 @@
 
 1. [The Problem — Why This Matters Now](#the-problem--why-this-matters-now)
 2. [The Paradigm Shift — Computation Should Follow Energy](#the-paradigm-shift--computation-should-follow-energy)
-3. [Literature & Prior Work](#literature--prior-work)
+3. [Literature &amp; Prior Work](#literature--prior-work)
 4. [Our Approach — What Makes GreenRoute Different](#our-approach--what-makes-greenroute-different)
 5. [Key Improvements Over Existing Work](#key-improvements-over-existing-work)
 6. [System Architecture](#system-architecture)
 7. [RL Environment Design](#rl-environment-design)
 8. [Agent Design](#agent-design)
-9. [Safety & Constraints](#safety--constraints)
+9. [Safety &amp; Constraints](#safety--constraints)
 10. [Live Demo](#live-demo)
 11. [Project Structure](#project-structure)
 12. [How to Run](#how-to-run)
 
 ---
 
-## The Problem — Why This Matters Now
+## The Problem - Why This Matters Now
 
-**Data centres are the factories of the 21st century. And they're burning the planet.**
+Data centre demand is rising quickly, and the grid mix varies by location and time.
 
-- In **2024**, global data centres consumed **415 TWh** of electricity — more than the entire country of South Africa ([IEA Global Energy Review 2025](https://www.carbonbrief.org/ai-five-charts-that-put-data-centre-energy-use-and-emissions-into-context/)).
-- By **2030**, that number is projected to reach **945 TWh** — more than Japan's total electricity consumption today ([World Economic Forum, 2025](https://www.weforum.org/stories/2025/12/data-centres-and-energy-demand/)).
-- Training a single large AI model like ChatGPT-4 consumes as much electricity as **3,000 US households use in a year**.
-- The tech industry's response? **Throwing money at the problem.** Microsoft signed a **$16 billion deal** to restart a Three Mile Island nuclear reactor. Amazon invested **$20 billion+** to convert Susquehanna into an AI campus. Google signed the first-ever corporate SMR (Small Modular Reactor) fleet deal for **500 MW** by 2030.
+- In **2024**, global data centres consumed **415 TWh** of electricity - more than South Africa ([IEA Global Energy Review 2025](https://www.carbonbrief.org/ai-five-charts-that-put-data-centre-energy-use-and-emissions-into-context/)).
+- By **2030**, projections reach **945 TWh** - above Japan’s current electricity use ([World Economic Forum, 2025](https://www.weforum.org/stories/2025/12/data-centres-and-energy-demand/)).
+- Training a single large AI model like ChatGPT-4 can consume electricity comparable to **3,000 US households per year**.
+- Industry responses include long-horizon supply bets: Microsoft’s **$16B** Three Mile Island restart, Amazon’s **$20B+** Susquehanna AI campus, and Google’s corporate SMR deal targeting **500 MW** by 2030.
 
-These are 10-year bets. But the carbon is being emitted **today**.
-
-> *Every time you ask an AI a question, a data centre somewhere burns fossil fuel to answer it. The question isn't whether we need clean energy — it's what we do with the dirty energy we have right now.*
-
-The uncomfortable truth: we cannot build renewable capacity fast enough to keep up with AI's appetite. Solar farms take years to build. Nuclear reactors take a decade. But the sun is **already shining somewhere** — it's just not where your job is running.
-
-**What if, instead of bringing clean energy to our data centres, we brought our data centres' workloads to the clean energy?**
+Those investments take years. In the meantime, cleaner power is often available in other regions at the same time. The practical lever is workload placement and timing: route flexible work to cleaner regions and wait out high-carbon periods when possible.
 
 ---
 
@@ -50,7 +44,7 @@ The traditional approach is:
 Build a data centre → Build a power plant next to it → Hope it's clean energy
 ```
 
-GreenRoute flips this on its head:
+GreenRoute instead routes compute based on renewable availability:
 
 ```
 The sun is shining in Arizona → Route the ML training job there
@@ -58,17 +52,17 @@ A storm hits Oregon → Hold the batch job, wait 20 minutes, then route to Calif
 Texas wind is gusting at midnight → Send the data pipeline there
 ```
 
-**We don't move energy to computation. We move computation to energy.**
+The goal is simple: move compute to cleaner energy windows.
 
-This is not a theoretical idea. Google demonstrated in 2020 that shifting workloads across data centres based on carbon intensity reduces emissions. But their approach was **greedy** — pick the lowest-carbon DC right now, route immediately, never wait.
+Google showed in 2020 that shifting flexible workloads across data centres based on carbon intensity can reduce emissions. That approach is **greedy**: pick the lowest-carbon DC at the moment and route immediately (no explicit waiting).
 
-Our approach goes further. We use **Reinforcement Learning** to train an agent that learns:
+GreenRoute uses **Reinforcement Learning** to learn:
 
 - **Where** to route (5 geographically distributed DCs with different renewable profiles)
-- **When** to route (sometimes the best action is to *wait* — hold a job for 20 minutes until solar comes online)
+- **When** to route (sometimes the best action is to **hold** a job briefly until conditions improve)
 - **What** to route (not all jobs are equal — urgent financial transactions can't wait, but ML training can)
 
-The result: an agent that doesn't just follow the sun — it **anticipates** it.
+The result is a policy that trades off routing vs. waiting based on job flexibility and current conditions.
 
 ---
 
@@ -78,93 +72,93 @@ The result: an agent that doesn't just follow the sun — it **anticipates** it.
 
 Google published work on shifting flexible workloads to times and places with cleaner energy:
 
-- **Approach**: Greedy optimisation — at each decision point, pick the DC with the lowest carbon intensity right now.
-- **Scope**: Single operator, deterministic energy forecasts, no concept of "waiting."
+- **Approach**: Greedy optimisation - at each decision point, pick the DC with the lowest carbon intensity at that moment.
+- **Scope**: Typically assumes a single operator, deterministic forecasts, and no explicit "wait" action.
 - **Results**: Achieved meaningful carbon reductions for batch workloads.
 
 ### Microsoft's Carbon-Aware Scheduling
 
-- **Approach**: Time-shifting — delay jobs to hours when the local grid is cleaner.
-- **Limitation**: Only shifts in **time** (not across locations), and cannot handle multi-DC routing.
+- **Approach**: Time-shifting - delay jobs to hours when the local grid is cleaner.
+- **Limitation**: Shifts in **time** (not across locations), so it does not cover multi-DC routing.
 
 ### Other RL Approaches for Data Centre Optimisation
 
-- DeepMind's cooling optimisation (2016) used RL to reduce cooling energy by 40%, but focused on **within** a single DC, not cross-DC routing.
+- DeepMind's cooling optimisation (2016) used RL to reduce cooling energy by 40%, but it optimises **within** a single DC (not cross-DC routing).
 - Academic work on RL-based job scheduling exists but typically assumes perfect forecasts and single-operator environments.
 
 ### Gaps in the Literature
 
-| Gap | Description |
-|-----|-------------|
-| **No hold/wait action** | Existing systems must route immediately — they cannot learn to *wait* for better conditions |
-| **Single operator assumed** | No modelling of shared capacity or multi-tenant pressure |
-| **Deterministic weather** | Prior work uses forecasts, not stochastic real-time weather events |
-| **No queue awareness** | All jobs treated identically regardless of urgency or flexibility |
-| **Greedy, not learned** | Rule-based carbon picking, not a policy learned through experience |
+| Gap                               | Description                                                                                   |
+| --------------------------------- | --------------------------------------------------------------------------------------------- |
+| **No hold/wait action**     | Existing systems must route immediately — they cannot learn to*wait* for better conditions |
+| **Single operator assumed** | No modelling of shared capacity or multi-tenant pressure                                      |
+| **Deterministic weather**   | Prior work uses forecasts, not stochastic real-time weather events                            |
+| **No queue awareness**      | All jobs treated identically regardless of urgency or flexibility                             |
+| **Greedy, not learned**     | Rule-based carbon picking, not a policy learned through experience                            |
 
 ---
 
-## Our Approach — What Makes GreenRoute Different
+## Our Approach - What Makes GreenRoute Different
 
-GreenRoute uses **Proximal Policy Optimisation (PPO)** with an Actor-Critic architecture to learn a routing policy that is fundamentally more capable than greedy approaches. The key insight is that RL can learn **when NOT to act** — something no greedy algorithm can do.
+GreenRoute trains a routing policy with **Proximal Policy Optimisation (PPO)** (Actor-Critic). The key difference vs. greedy routing is an explicit **hold** action: the agent can choose to wait instead of immediately placing a flexible job.
 
 ### The 5 Data Centres
 
-| ID | Location | Primary Renewable | Capacity | Base PUE |
-|----|----------|-------------------|----------|----------|
-| CA | California | Solar | 1000 TFLOPS | 1.10 |
-| TX | Texas | Wind | 1200 TFLOPS | 1.15 |
-| VA | Virginia | Mixed | 1500 TFLOPS | 1.20 |
-| OR | Oregon | Hydro | 800 TFLOPS | 1.08 |
-| AZ | Arizona | Solar | 900 TFLOPS | 1.12 |
+| ID | Location   | Primary Renewable | Capacity    | Base PUE |
+| -- | ---------- | ----------------- | ----------- | -------- |
+| CA | California | Solar             | 1000 TFLOPS | 1.10     |
+| TX | Texas      | Wind              | 1200 TFLOPS | 1.15     |
+| VA | Virginia   | Mixed             | 1500 TFLOPS | 1.20     |
+| OR | Oregon     | Hydro             | 800 TFLOPS  | 1.08     |
+| AZ | Arizona    | Solar             | 900 TFLOPS  | 1.12     |
 
 ### The 7-Action Space
 
 Unlike prior work that only picks a destination, our agent has **7 actions**:
 
-| Action | Description |
-|--------|-------------|
-| 0 | Process **locally** at origin DC |
-| 1–5 | Route to **CA, TX, VA, OR, or AZ** |
-| 6 | **Hold** — wait for better conditions before routing |
+| Action | Description                                                 |
+| ------ | ----------------------------------------------------------- |
+| 0      | Process**locally** at origin DC                       |
+| 1–5   | Route to**CA, TX, VA, OR, or AZ**                     |
+| 6      | **Hold** — wait for better conditions before routing |
 
-**Action 6 (Hold) is the most important innovation.** It allows the agent to say: "The grid is dirty everywhere right now. This job is flexible — let me wait 10–20 minutes for the storm to pass and solar to come back online."
+**Action 6 (Hold)** lets the agent defer flexible jobs when all options are high-carbon, then release them when a cleaner window appears (e.g., solar pickup after a storm).
 
 ### Three Job Types with Different Strategies
 
-| Job Type | Proportion | Can Reroute? | Can Hold? | Example |
-|----------|-----------|-------------|----------|---------|
-| **FLEXIBLE** | 45% | ✅ Yes, anywhere | ✅ Yes (up to ~1hr) | ML Training, Batch Analytics |
-| **SEMI_FLEX** | 30% | ⚠️ Within latency limit | ❌ No | Video Encoding, Data Sync |
-| **PINNED** | 25% | ❌ Must stay at origin | ❌ No | Financial Transactions, Healthcare |
+| Job Type            | Proportion | Can Reroute?      | Can Hold?        | Example                            |
+| ------------------- | ---------- | ----------------- | ---------------- | ---------------------------------- |
+| **FLEXIBLE**  | 45%        | YES (anywhere)    | YES (up to ~1hr) | ML Training, Batch Analytics       |
+| **SEMI_FLEX** | 30%        | LIMITED (latency) | NO               | Video Encoding, Data Sync          |
+| **PINNED**    | 25%        | NO (must stay)    | NO               | Financial Transactions, Healthcare |
 
-The agent learns **different strategies** for each type. A greedy agent treats them all the same.
+The policy can behave differently by job type; a greedy baseline typically treats all jobs the same.
 
 ---
 
 ## Key Improvements Over Existing Work
 
-### 1. Hold Decision — Learning When to Wait
+### 1. Hold Decision - Learning When to Wait
 
-**What**: The agent can defer routing flexible jobs when grid carbon is high, waiting for renewable energy windows.
+**What**: The agent can defer routing flexible jobs when grid carbon is high, waiting for renewable windows.
 
-**Why it matters**: During a storm, all DCs may have elevated carbon. A greedy agent must pick the "least bad" option. Our agent can **wait** for the storm to pass — often getting 20–30% lower carbon on the same job.
+**Why it matters**: During storms, many DCs can simultaneously have elevated carbon. Greedy routing must pick the "least bad" option immediately. Holding can capture a later, cleaner window; in this setup it can be **20–30%** lower carbon for the same job.
 
-**How**: Action 6 in the 7-action space. The PPO agent learns through reward shaping that holding during high-carbon periods and releasing during low-carbon windows yields better cumulative reward.
+**How**: Action 6 in the 7-action space. PPO learns via the reward that holding during high-carbon periods and releasing during low-carbon windows improves return.
 
 ### 2. Queue Composition Awareness
 
-**What**: The agent observes the queue — how many flexible vs. pinned jobs are pending, the total queue length, and transfer costs.
+**What**: The agent observes queue composition (flexible vs. pinned), total queue length, and transfer costs.
 
-**Why it matters**: If the queue is mostly pinned jobs (which can't move), the agent should be more aggressive about routing flexible jobs to clean DCs. If the queue is mostly flexible, it has more room to hold and wait.
+**Why it matters**: If the queue is mostly pinned jobs (which can't move), the agent should be more willing to route flexible jobs to clean DCs. If the queue is mostly flexible, it has more room to hold and wait.
 
-**How**: The 67-dimensional state vector includes queue statistics (`queue_length`, `flexible_fraction`, `transfer_cost_sum`).
+**How**: The 67-dimensional state includes queue statistics (`queue_length`, `flexible_fraction`, `transfer_cost_sum`).
 
 ### 3. Stochastic Weather Events
 
 **What**: Random weather events (cold snaps, storms, heat waves, solar booms) dynamically alter renewable output and carbon intensity.
 
-**Why it matters**: Real weather is not deterministic. Google's approach assumes good forecasts. Our agent is trained with **stochastic** weather, so it learns robust policies that handle surprise events.
+**Why it matters**: Weather is not deterministic. Training with **stochastic** events pushes the policy toward behavior that still works under surprises.
 
 **How**: The `StochasticWeatherModel` generates random events during training. Carbon multipliers: cold snap ×3, storm ×2.5, heat wave ×2.5, solar boom ×0.3. The agent sees 20 weather-event indicator features (4 event types × 5 DCs) in its state vector.
 
@@ -172,7 +166,7 @@ The agent learns **different strategies** for each type. A greedy agent treats t
 
 **What**: DCs have finite capacity and can become overloaded. Multiple "tenants" compete for resources.
 
-**Why it matters**: Google assumes a single operator with full control. In reality, cloud DCs are shared. Our agent learns to balance load and avoid overloading popular low-carbon DCs.
+**Why it matters**: Real DCs are shared. The agent needs to reduce carbon without concentrating load on a single popular low-carbon site.
 
 **How**: Utilisation tracking per DC, capacity-based action masking (DCs above 92% utilisation are infeasible), and utilisation equity penalties in the reward function.
 
@@ -180,7 +174,7 @@ The agent learns **different strategies** for each type. A greedy agent treats t
 
 **What**: Hard constraints that the agent can never violate, regardless of what the policy says.
 
-**Why it matters**: In production, you cannot allow an RL agent to violate SLA latency limits or overload a DC. Our safety layer guarantees constraint satisfaction.
+**Why it matters**: In production, an agent cannot violate SLA latency or overload capacity. The safety layer enforces feasibility.
 
 **How**: The `ActionMasker` enforces SLA latency limits, capacity limits, and hold limits. Invalid actions are masked before the softmax, making them impossible to select.
 
@@ -188,58 +182,53 @@ The agent learns **different strategies** for each type. A greedy agent treats t
 
 **What**: A lightweight rule-based layer that amplifies the NN's weather awareness during extreme events.
 
-**Why it matters**: RL agents trained for 5000 episodes may not develop perfectly sharp reactions to rare weather events. The safety layer ensures dramatic rerouting during carbon spikes.
+**Why it matters**: With finite training (e.g., 5000 episodes), rare extreme events may be underrepresented. The override catches obvious mistakes during carbon spikes.
 
-**How**: If the NN's chosen DC has >50% higher carbon than the best available, the safety layer overrides to the cleaner DC. This combines the NN's learned policy with hard safety guarantees — the NN spreads load across reasonably clean DCs, while the safety layer catches extreme weather spikes (storm ×2.5, cold snap ×3).
+**How**: If the NN’s chosen DC has >50% higher carbon than the best available, override to the cleaner DC. The NN still handles the general trade-offs (including load spread), and the rule catches extreme spikes (storm ×2.5, cold snap ×3).
 
 ---
 
 ## Comparison Table: GreenRoute vs. Prior Work
 
-| Capability | Google (Greedy) | Microsoft (Time-shift) | DeepMind (Cooling) | **GreenRoute (Ours)** |
-|---|---|---|---|---|
-| Cross-DC routing | ✅ | ❌ | ❌ | ✅ |
-| Time-shifting | ✅ | ✅ | ❌ | ✅ |
-| **Hold/wait action** | ❌ | ❌ | ❌ | ✅ |
-| **Queue composition aware** | ❌ | ❌ | ❌ | ✅ |
-| **Multi-tenant capacity** | ❌ | ❌ | ❌ | ✅ |
-| **Stochastic weather** | ❌ | ❌ | ❌ | ✅ |
-| **Learned policy (RL)** | ❌ (greedy) | ❌ (heuristic) | ✅ (cooling only) | ✅ (full routing) |
-| Safety constraints | Manual | Manual | ❌ | ✅ (action masking) |
-| Job type differentiation | ❌ | ❌ | ❌ | ✅ (3 types) |
-| Live browser demo | ❌ | ❌ | ❌ | ✅ |
+| Capability                        | Google (Greedy) | Microsoft (Time-shift) | DeepMind (Cooling) | **GreenRoute (Ours)** |
+| --------------------------------- | --------------- | ---------------------- | ------------------ | --------------------------- |
+| Cross-DC routing                  | YES             | NO                     | NO                 | YES                         |
+| Time-shifting                     | YES             | YES                    | NO                 | YES                         |
+| **Hold/wait action**        | NO              | NO                     | NO                 | YES                         |
+| **Queue composition aware** | NO              | NO                     | NO                 | YES                         |
+| **Multi-tenant capacity**   | NO              | NO                     | NO                 | YES                         |
+| **Stochastic weather**      | NO              | NO                     | NO                 | YES                         |
+| **Learned policy (RL)**     | NO (greedy)     | NO (heuristic)         | YES (cooling only) | YES (full routing)          |
+| Safety constraints                | Manual          | Manual                 | NO                 | YES (action masking)        |
+| Job type differentiation          | NO              | NO                     | NO                 | YES (3 types)               |
+| Live browser demo                 | NO              | NO                     | NO                 | YES                         |
 
 ---
 
 ## System Architecture
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   GreenRoute System                  │
-├─────────────────────────────────────────────────────┤
-│                                                      │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────┐│
-│  │ Job Generator │──▶│  RL Agent    │──▶│ Action   ││
-│  │ (3 types)    │   │  (PPO)       │   │ Masker   ││
-│  └──────────────┘   └──────┬───────┘   └────┬─────┘│
-│                            │                 │      │
-│                    ┌───────▼─────────────────▼──┐   │
-│                    │     DataCentreEnv          │   │
-│                    │  ┌─────────────────────┐   │   │
-│                    │  │  5 DCs (CA,TX,VA,   │   │   │
-│                    │  │  OR,AZ) with:       │   │   │
-│                    │  │  • Renewable Model   │   │   │
-│                    │  │  • Grid Carbon Model │   │   │
-│                    │  │  • Weather Events    │   │   │
-│                    │  │  • Capacity Tracking │   │   │
-│                    │  └─────────────────────┘   │   │
-│                    └────────────────────────────┘   │
-│                                                      │
-│  ┌──────────────┐   ┌──────────────┐                │
-│  │ Carbon Budget│   │ Equity       │                │
-│  │ Tracker      │   │ Auditor      │                │
-│  └──────────────┘   └──────────────┘                │
-└─────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    J["Job Generator<br/>(3 job types)"] --> E["DataCentreEnv<br/>(5 DCs: CA, TX, VA, OR, AZ)"]
+
+    E --> A["RL Agent<br/>(PPO Actor-Critic)"]
+    A --> M["Action Masker<br/>(SLA + capacity + hold limits)"]
+    M --> E
+
+    E --> B["Carbon Budget Tracker"]
+    E --> Q["Equity Auditor"]
+
+    subgraph PerDC["Per-DC models"]
+        R["Renewable Model"]
+        G["Grid Carbon Model"]
+        W["Weather Events"]
+        U["Capacity Tracking"]
+    end
+
+    E -.-> R
+    E -.-> G
+    E -.-> W
+    E -.-> U
 ```
 
 ---
@@ -250,11 +239,11 @@ The agent learns **different strategies** for each type. A greedy agent treats t
 
 The agent observes a rich state at each decision step:
 
-| Feature Group | Dimensions | Description |
-|---|---|---|
-| Per-DC features (×5 DCs) | 35 | Solar irradiance, wind speed, carbon intensity, renewable fraction, utilisation, cost, capacity available |
-| Weather event indicators (×5 DCs) | 20 | One-hot for cold_snap, storm, heat_wave, solar_boom per DC |
-| Global features | 12 | Time of day (sin/cos), forecast means/stds, queue stats |
+| Feature Group                      | Dimensions | Description                                                                                                  |
+| ---------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------ |
+| Per-DC features (×5 DCs)          | 35         | Solar irradiance ``Wind speed``Carbon intensity ``Renewable fraction``Utilisation ``Cost``Capacity available |
+| Weather event indicators (×5 DCs) | 20         | One-hot per DC for:``cold_snap, storm, heat_wave, solar_boom                                                 |
+| Global features                    | 12         | Time of day (sin/cos)``Forecast means/stds``Queue stats                                                      |
 
 ### Reward Function
 
@@ -298,28 +287,31 @@ Action Probabilities (7 actions)               State Value V(s)
 
 ### Agents Implemented for Comparison
 
-| Agent | Type | Description |
-|---|---|---|
-| **PPO** | RL (Actor-Critic) | Our primary agent — full 7-action space with hold |
-| **DQN** | RL (Value-based) | Deep Q-Network baseline |
-| **Q-Table** | RL (Tabular) | Discretised state-space tabular agent |
-| **Greedy** | Rule-based | Always picks lowest-carbon DC (Google's approach) |
-| **Random** | Baseline | Uniform random among feasible DCs |
+| Agent             | Type              | Description                                        |
+| ----------------- | ----------------- | -------------------------------------------------- |
+| **PPO**     | RL (Actor-Critic) | Our primary agent — full 7-action space with hold |
+| **DQN**     | RL (Value-based)  | Deep Q-Network baseline                            |
+| **Q-Table** | RL (Tabular)      | Discretised state-space tabular agent              |
+| **Greedy**  | Rule-based        | Always picks lowest-carbon DC (Google's approach)  |
+| **Random**  | Baseline          | Uniform random among feasible DCs                  |
 
 ---
 
 ## Safety & Constraints
 
 ### Action Masker (`safety/action_masker.py`)
+
 - Enforces **SLA latency limits** — semi-flex jobs can only route to DCs within latency budget
 - Enforces **capacity limits** — DCs above 92% utilisation are masked out
 - Enforces **hold limits** — max 4 jobs can be held simultaneously
 
 ### Carbon Budget Tracker (`safety/carbon_budget_tracker.py`)
+
 - Tracks cumulative carbon emissions against a budget
 - Alerts when budget is being consumed too quickly
 
 ### Equity Auditor (`safety/equity_auditor.py`)
+
 - Monitors that no single DC is disproportionately loaded
 - Penalises utilisation imbalance across the 5 DCs
 
@@ -327,7 +319,7 @@ Action Probabilities (7 actions)               State Value V(s)
 
 ## Live Demo
 
-The browser demo runs the trained PPO policy **entirely client-side** — no server needed. The neural network weights are exported to JSON and inference runs in JavaScript.
+The browser demo runs the trained PPO policy **client-side** (no server). Weights are exported to JSON and inference runs in JavaScript.
 
 ### What the Demo Shows
 
@@ -335,16 +327,16 @@ The browser demo runs the trained PPO policy **entirely client-side** — no ser
 - **Policy distribution** — which DCs the NN prefers at each moment
 - **Queue & Hold Decisions** — job composition breakdown + live hold queue showing when the agent waits
 - **Agent Decision panel** — per-job routing with confidence, carbon saving, and policy source
-- **Routing Feed** — live stream of decisions with held (⏸) and released (▶) jobs
+- **Routing Feed** — live stream of decisions, including held (⏸) and released (▶) jobs
 - **Baseline Comparison** — PPO vs Random agent running on the same jobs
 - **Weather events** — storms, cold snaps, heat waves, solar booms affecting DC conditions
 
 ### Key Demo Interactions to Watch
 
 1. **During a storm/cold snap**: Watch the agent hold flexible jobs and reroute away from affected DCs
-2. **During a solar boom**: Watch the agent aggressively route to the solar-powered DC
+2. **During a solar boom**: Watch the agent route more jobs to the solar-powered DC
 3. **PPO vs Random**: The carbon savings gap widens over time, showing RL's advantage
-4. **Hold → Release**: Flexible jobs held during dirty grid, released when renewables come online
+4. **Hold → Release**: Flexible jobs held (HELD) during dirty grid, released (RELEASED) when renewables come online
 
 ---
 
@@ -426,10 +418,10 @@ python train_and_export.py
 
 After 5000 episodes of training with stochastic weather:
 
-- **PPO saves 60–100% more CO₂** than Random baseline
-- **Hold decisions** account for ~5–10% of flexible jobs, yielding additional 15–25% carbon reduction on those held jobs
-- **SLA compliance** maintained at >99% through action masking
-- **Renewable utilisation** ~18–25% average across all jobs
+- **PPO saves 60–100% more CO₂** than the Random baseline
+- **Hold** is used on ~5–10% of flexible jobs and yields an additional 15–25% carbon reduction for those held jobs
+- **SLA compliance** stays >99% via action masking
+- **Renewable utilisation** averages ~18–25% across jobs
 
 ---
 
