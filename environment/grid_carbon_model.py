@@ -8,13 +8,13 @@ Carbon intensity varies by time of day (demand-driven) and renewable penetration
 import numpy as np
 from typing import Dict
 
-# Base carbon intensity (gCO₂/kWh) for each region — from EPA eGRID 2022
+# Regional electricity grid parameters from EPA eGRID 2022
 BASE_CARBON_INTENSITY = {
-    "CA": 200.0,   # CAMX — California grid, high solar/gas mix
-    "TX": 400.0,   # ERCT — Texas (ERCOT), gas/wind/some coal
-    "VA": 500.0,   # SRVC — Virginia, coal/gas/nuclear heavy
-    "OR": 280.0,   # NWPP — Pacific Northwest, gas + wind mix
-    "AZ": 220.0,   # AZNM — Arizona/New Mexico, solar + gas
+    "CA": 200.0,
+    "TX": 400.0,
+    "VA": 500.0,
+    "OR": 280.0,
+    "AZ": 220.0,
 }
 
 # Energy cost $/kWh base rates (commercial/industrial average)
@@ -26,13 +26,13 @@ BASE_ENERGY_COST = {
     "AZ": 0.10,
 }
 
-# PUE (Power Usage Effectiveness) — lower is better (1.0 = perfect)
+# PUE (Power Usage Effectiveness) — lower is better
 BASE_PUE = {
-    "CA": 1.15,   # Moderate climate, good cooling
-    "TX": 1.25,   # Hot, higher cooling load
-    "VA": 1.20,   # Moderate
-    "OR": 1.10,   # Cool climate, excellent PUE
-    "AZ": 1.30,   # Very hot, highest cooling load
+    "CA": 1.15,
+    "TX": 1.25,
+    "VA": 1.20,
+    "OR": 1.10,
+    "AZ": 1.30,
 }
 
 # Compute capacity per data centre (TFLOPS)
@@ -44,82 +44,86 @@ COMPUTE_CAPACITY = {
     "AZ": 4000.0,
 }
 
+# Carbon intensity model constants
+DEMAND_PEAK_HOUR = 17.0
+RENEWABLE_OFFSET_FACTOR = 0.6
+CARBON_MIN_FLOOR = 20.0
+LOCAL_TIMEZONE_OFFSETS = {"CA": -8, "TX": -6, "VA": -5, "OR": -8, "AZ": -7}
+
+# Energy cost model constants
+PEAK_HOUR_START = 14
+PEAK_HOUR_END = 19
+OFF_PEAK_START_HOUR = 22
+OFF_PEAK_END_HOUR = 6
+PEAK_TOU_FACTOR = 1.5
+MID_PEAK_TOU_FACTOR = 1.0
+OFF_PEAK_TOU_FACTOR = 0.6
+COST_MIN_FLOOR = 0.02
+
+# PUE model constants
+PUE_TEMP_FACTOR_AMP = 0.05
+PUE_TEMP_DAY_START = 6
+PUE_TEMP_DAY_END = 18
+
+# Utilisation constants
+UTILISATION_INITIAL_MEAN = 0.3
+UTILISATION_INITIAL_STD = 0.2
+UTILISATION_MIN = 0.05
+UTILISATION_DECAY_RATE = 0.97
+
 
 class GridCarbonModel:
     """Models time-varying grid carbon intensity and energy costs per location."""
 
     def __init__(self, seed: int = 42):
+        """Initialize grid carbon model with regional base parameters and utilisation tracking."""
         self.rng = np.random.RandomState(seed)
         self.base_carbon = BASE_CARBON_INTENSITY.copy()
         self.base_cost = BASE_ENERGY_COST.copy()
         self.pue = BASE_PUE.copy()
         self.capacity = COMPUTE_CAPACITY.copy()
-        # Track current utilisation per data centre
-        self.utilisation = {loc: 0.3 + self.rng.uniform(0, 0.2) for loc in self.base_carbon}
+        self.utilisation = {
+            loc: UTILISATION_INITIAL_MEAN + self.rng.uniform(0, UTILISATION_INITIAL_STD)
+            for loc in self.base_carbon
+        }
 
     def get_carbon_intensity(self, utc_hour: float, location_id: str,
                              renewable_fraction: float = 0.0) -> float:
-        """
-        Get real-time carbon intensity (gCO₂/kWh) for a location.
-        
-        Carbon intensity varies with:
-        - Time of day (demand curve — higher during peak hours)
-        - Renewable penetration (higher renewables = lower carbon)
-        - Random fluctuations (grid events, plant outages)
-        """
+        """Get real-time carbon intensity varying with demand and renewable penetration."""
         base = self.base_carbon[location_id]
+        local_hour = (utc_hour + LOCAL_TIMEZONE_OFFSETS[location_id]) % 24
 
-        # Demand-driven diurnal pattern: higher carbon during peak demand (2-7pm local)
-        # Using a simplified demand curve
-        local_offsets = {"CA": -8, "TX": -6, "VA": -5, "OR": -8, "AZ": -7}
-        local_hour = (utc_hour + local_offsets[location_id]) % 24
-
-        # Peak demand multiplier (peaks around 5pm local)
-        demand_factor = 1.0 + 0.2 * np.exp(-0.5 * ((local_hour - 17) / 3) ** 2)
-
-        # Renewable offset: more renewables = lower marginal carbon
-        renewable_offset = renewable_fraction * base * 0.6
-
-        # Small stochastic noise (grid events)
+        demand_factor = 1.0 + 0.2 * np.exp(-0.5 * ((local_hour - DEMAND_PEAK_HOUR) / 3) ** 2)
+        renewable_offset = renewable_fraction * base * RENEWABLE_OFFSET_FACTOR
         noise = self.rng.normal(0, base * 0.05)
 
         carbon = base * demand_factor - renewable_offset + noise
-        return float(max(carbon, 20.0))  # Floor at 20 gCO2/kWh
+        return float(max(carbon, CARBON_MIN_FLOOR))
 
     def get_energy_cost(self, utc_hour: float, location_id: str) -> float:
-        """
-        Get real-time energy cost ($/kWh) for a location.
-        
-        Varies with time of day (TOU pricing) and demand.
-        """
+        """Get real-time energy cost with time-of-use pricing."""
         base = self.base_cost[location_id]
-        local_offsets = {"CA": -8, "TX": -6, "VA": -5, "OR": -8, "AZ": -7}
-        local_hour = (utc_hour + local_offsets[location_id]) % 24
+        local_hour = (utc_hour + LOCAL_TIMEZONE_OFFSETS[location_id]) % 24
 
-        # Time-of-use pricing: peak (2-7pm), off-peak (10pm-6am), mid-peak otherwise
-        if 14 <= local_hour <= 19:
-            tou_factor = 1.5  # Peak
-        elif local_hour >= 22 or local_hour <= 6:
-            tou_factor = 0.6  # Off-peak
+        if PEAK_HOUR_START <= local_hour <= PEAK_HOUR_END:
+            tou_factor = PEAK_TOU_FACTOR
+        elif local_hour >= OFF_PEAK_START_HOUR or local_hour <= OFF_PEAK_END_HOUR:
+            tou_factor = OFF_PEAK_TOU_FACTOR
         else:
-            tou_factor = 1.0  # Mid-peak
+            tou_factor = MID_PEAK_TOU_FACTOR
 
-        noise = self.rng.normal(0, base * 0.03)
-        cost = base * tou_factor + noise
-        return float(max(cost, 0.02))
+        cost = base * tou_factor + self.rng.normal(0, base * 0.03)
+        return float(max(cost, COST_MIN_FLOOR))
 
     def get_pue(self, location_id: str, utc_hour: float) -> float:
-        """
-        Get cooling efficiency (PUE) — varies slightly with outside temp proxy.
-        
-        Higher PUE = more energy wasted on cooling.
-        """
+        """Get cooling efficiency (PUE) varying with temperature proxy."""
         base = self.pue[location_id]
-        local_offsets = {"CA": -8, "TX": -6, "VA": -5, "OR": -8, "AZ": -7}
-        local_hour = (utc_hour + local_offsets[location_id]) % 24
+        local_hour = (utc_hour + LOCAL_TIMEZONE_OFFSETS[location_id]) % 24
 
-        # Temperature proxy: hotter during afternoon
-        temp_factor = 1.0 + 0.05 * np.sin(np.pi * (local_hour - 6) / 12) if 6 <= local_hour <= 18 else 1.0
+        if PUE_TEMP_DAY_START <= local_hour <= PUE_TEMP_DAY_END:
+            temp_factor = 1.0 + PUE_TEMP_FACTOR_AMP * np.sin(np.pi * (local_hour - PUE_TEMP_DAY_START) / 12)
+        else:
+            temp_factor = 1.0
 
         return float(base * temp_factor)
 
@@ -136,15 +140,14 @@ class GridCarbonModel:
     def update_utilisation(self, location_id: str, compute_units: float, add: bool = True):
         """Update utilisation when a job is routed to/completed at a location."""
         delta = compute_units / self.capacity[location_id]
-        if add:
-            self.utilisation[location_id] = min(self.utilisation[location_id] + delta, 1.0)
-        else:
-            self.utilisation[location_id] = max(self.utilisation[location_id] - delta, 0.05)
+        new_util = self.utilisation[location_id] + (delta if add else -delta)
+        self.utilisation[location_id] = np.clip(new_util, UTILISATION_MIN, 1.0)
 
     def decay_utilisation(self):
         """Decay utilisation slightly each step (jobs completing)."""
         for loc in self.utilisation:
-            self.utilisation[loc] = max(0.1, self.utilisation[loc] * 0.97 + self.rng.normal(0, 0.01))
+            decayed = self.utilisation[loc] * UTILISATION_DECAY_RATE + self.rng.normal(0, 0.01)
+            self.utilisation[loc] = max(UTILISATION_MIN, decayed)
 
     def get_all_states(self, utc_hour: float, renewable_fractions: Dict[str, float]) -> Dict[str, Dict[str, float]]:
         """Get all grid/capacity metrics for every location."""

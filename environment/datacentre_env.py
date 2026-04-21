@@ -8,7 +8,7 @@ The agent observes a 47-dimensional state vector and selects one of 7 actions
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, Any
 
 from .renewable_model import RenewableModel, LOCATIONS
 from .grid_carbon_model import GridCarbonModel, BASE_CARBON_INTENSITY
@@ -19,6 +19,24 @@ LOCATION_IDS = ["CA", "TX", "VA", "OR", "AZ"]
 NUM_LOCATIONS = 5
 STATE_DIM = 67  # 47 base + 20 weather event indicators (4 types × 5 DCs)
 NUM_ACTIONS = 7  # 5 locations + local + hold
+
+# Observation normalization factors
+SOLAR_NORM = 1000.0
+WIND_NORM = 25.0
+CARBON_NORM = 600.0
+CAPACITY_NORM = 6000.0
+COST_NORM = 0.30
+PUE_NORM = 1.5
+FORECAST_SOLAR_NORM = 1000.0
+FORECAST_WIND_NORM = 25.0
+FORECAST_SOLAR_STD_NORM = 500.0
+FORECAST_WIND_STD_NORM = 10.0
+QUEUE_LENGTH_NORM = 20.0
+COST_MATRIX_NORM = 2.0
+CARBON_SAVED_NORM = 10000.0
+
+# Weather event types
+EVENT_TYPES = ["cold_snap", "storm", "heat_wave", "solar_boom"]
 
 
 class DataCentreEnv(gym.Env):
@@ -67,7 +85,7 @@ class DataCentreEnv(gym.Env):
         self.total_jobs_routed = 0
         self.episode_log: List[Dict] = []
 
-    def reset(self, seed=None, options=None) -> Tuple[np.ndarray, dict]:
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, dict]:
         """Reset environment for a new episode."""
         if seed is not None:
             self.seed_val = seed
@@ -103,8 +121,7 @@ class DataCentreEnv(gym.Env):
         return obs, info
 
     def _get_next_routable_job(self) -> Optional[Job]:
-        """Get the next job the agent can route (skip PINNED jobs)."""
-        # First, process any pinned jobs locally (agent doesn't see them)
+        """Get the next routable job; process pinned jobs locally."""
         remaining = []
         for job in self.job_queue:
             if job.job_type == JobType.PINNED:
@@ -113,11 +130,10 @@ class DataCentreEnv(gym.Env):
                 remaining.append(job)
         self.job_queue = remaining
 
-        # Check hold queue for expired holds
         new_hold = []
         for job, time_held in self.hold_queue:
-            if time_held >= 0.5:  # Max hold = 30 min
-                remaining.insert(0, job)  # Force process
+            if time_held >= 0.5:
+                remaining.insert(0, job)
             else:
                 new_hold.append((job, time_held + self.timestep_hours))
         self.hold_queue = new_hold
@@ -126,8 +142,8 @@ class DataCentreEnv(gym.Env):
             return self.job_queue.pop(0)
         return None
 
-    def _process_job_locally(self, job: Job):
-        """Process a pinned/local job at its origin — no routing decision."""
+    def _process_job_locally(self, job: Job) -> None:
+        """Process job at origin without routing decision."""
         self.total_jobs_processed += 1
         renewable_states = self.renewable_model.get_all_states(self.current_hour)
         rf = renewable_states[job.origin]["renewable_fraction"]
@@ -135,85 +151,64 @@ class DataCentreEnv(gym.Env):
         self.grid_model.update_utilisation(job.origin, job.compute_units)
 
     def _build_observation(self) -> np.ndarray:
-        """
-        Build the 47-dimensional state vector.
-        
-        Per data centre (5 × 7 = 35):
-          solar_irradiance, wind_speed, carbon_intensity, utilisation,
-          available_capacity, energy_cost, pue
-        Global (12):
-          time_sin, time_cos, day_sin, day_cos,
-          forecast_solar_avg, forecast_wind_avg, forecast_solar_std, forecast_wind_std,
-          queue_length, flexible_fraction, transfer_cost_sum, carbon_saved_so_far
-        """
+        """Build 47-dimensional state vector with per-location and global features."""
         renewable_states = self.renewable_model.get_all_states(self.current_hour)
-        renewable_fracs = {loc: renewable_states[loc]["renewable_fraction"] for loc in LOCATION_IDS}
-        grid_states = self.grid_model.get_all_states(self.current_hour, renewable_fracs)
+        grid_states = self.grid_model.get_all_states(
+            self.current_hour,
+            {loc: renewable_states[loc]["renewable_fraction"] for loc in LOCATION_IDS}
+        )
         forecast = self.renewable_model.get_forecast(self.current_hour)
 
         features = []
 
-        # Per-location features (5 × 7 = 35)
         for loc_id in LOCATION_IDS:
             rs = renewable_states[loc_id]
             gs = grid_states[loc_id]
             features.extend([
-                rs["solar_irradiance"] / 1000.0,       # Normalise to ~[0, 1]
-                rs["wind_speed"] / 25.0,                # Normalise to ~[0, 1]
-                gs["carbon_intensity"] / 600.0,         # Normalise to ~[0, 1]
-                gs["utilisation"],                      # Already [0, 1]
-                gs["available_capacity"] / 6000.0,      # Normalise
-                gs["energy_cost"] / 0.30,               # Normalise
-                gs["pue"] / 1.5,                        # Normalise
+                rs["solar_irradiance"] / SOLAR_NORM,
+                rs["wind_speed"] / WIND_NORM,
+                gs["carbon_intensity"] / CARBON_NORM,
+                gs["utilisation"],
+                gs["available_capacity"] / CAPACITY_NORM,
+                gs["energy_cost"] / COST_NORM,
+                gs["pue"] / PUE_NORM,
             ])
 
-        # Weather event indicators (5 × 4 = 20)
-        # Per location: [is_cold_snap, is_storm, is_heat_wave, is_solar_boom]
-        # Base env has no events — all zeros. StochasticDataCentreEnv overrides.
-        event_types = ["cold_snap", "storm", "heat_wave", "solar_boom"]
         active_events = getattr(self, '_active_weather_events', {})
         for loc_id in LOCATION_IDS:
-            ev = active_events.get(loc_id, {})
-            ev_type = ev.get("type", None)
-            for et in event_types:
-                features.append(1.0 if ev_type == et else 0.0)
+            ev_type = active_events.get(loc_id, {}).get("type", None)
+            features.extend(1.0 if ev_type == et else 0.0 for et in EVENT_TYPES)
 
-        # Global features (12)
         hour_rad = 2 * np.pi * self.current_hour / 24.0
-        features.append(np.sin(hour_rad))  # time_sin
-        features.append(np.cos(hour_rad))  # time_cos
+        features.extend([np.sin(hour_rad), np.cos(hour_rad)])
 
-        # Day of week (simulate as step-based)
         day_frac = (self.current_step * self.timestep_hours) / (24 * 7)
-        features.append(np.sin(2 * np.pi * day_frac))  # day_sin
-        features.append(np.cos(2 * np.pi * day_frac))  # day_cos
+        features.extend([np.sin(2 * np.pi * day_frac), np.cos(2 * np.pi * day_frac)])
 
-        # Forecast features (next 2 hours)
         solar_forecasts = [forecast[loc]["solar_forecast"] for loc in LOCATION_IDS]
         wind_forecasts = [forecast[loc]["wind_forecast"] for loc in LOCATION_IDS]
-        features.append(np.mean(solar_forecasts) / 1000.0)
-        features.append(np.mean(wind_forecasts) / 25.0)
-        features.append(np.std(solar_forecasts) / 500.0)
-        features.append(np.std(wind_forecasts) / 10.0)
+        features.extend([
+            np.mean(solar_forecasts) / FORECAST_SOLAR_NORM,
+            np.mean(wind_forecasts) / FORECAST_WIND_NORM,
+            np.std(solar_forecasts) / FORECAST_SOLAR_STD_NORM,
+            np.std(wind_forecasts) / FORECAST_WIND_STD_NORM,
+        ])
 
-        # Queue stats
         all_jobs = self.job_queue + ([self.current_job] if self.current_job else [])
         queue_stats = self.job_generator.get_queue_stats(all_jobs)
-        features.append(queue_stats["total"] / 20.0)
-        features.append(queue_stats["flexible_fraction"])
-
-        # Network cost sum
-        features.append(self.network_model.get_cost_matrix_sum() / 2.0)
-
-        # Carbon saved so far (normalised)
-        features.append(self.total_carbon_saved / 10000.0)
+        features.extend([
+            queue_stats["total"] / QUEUE_LENGTH_NORM,
+            queue_stats["flexible_fraction"],
+            self.network_model.get_cost_matrix_sum() / COST_MATRIX_NORM,
+            self.total_carbon_saved / CARBON_SAVED_NORM,
+        ])
 
         obs = np.array(features, dtype=np.float32)
         assert obs.shape == (STATE_DIM,), f"Expected {STATE_DIM} features, got {obs.shape[0]}"
         return obs
 
-    def _build_info(self) -> dict:
-        """Build info dictionary for current state."""
+    def _build_info(self) -> Dict:
+        """Build info dictionary with episode metrics and current state details."""
         return {
             "current_hour": self.current_hour,
             "current_step": self.current_step,
@@ -245,7 +240,6 @@ class DataCentreEnv(gym.Env):
         action_result = {}
 
         if self.current_job is None:
-            # No job to route — advance time
             self._advance_time()
             obs = self._build_observation()
             done = self.current_step >= self.max_steps
@@ -254,41 +248,34 @@ class DataCentreEnv(gym.Env):
         job = self.current_job
 
         if action == 6:
-            # Hold job in queue
-            if job.max_latency_hours > 0.5:  # Can only hold if SLA allows
+            if job.max_latency_hours > 0.5:
                 self.hold_queue.append((job, 0.0))
-                reward = -0.5  # Small penalty for holding
+                reward = -0.5
                 action_result = {"held": True, "sla_violated": False,
                                 "capacity_exceeded": False, "transfer_cost": 0.0}
             else:
-                # Can't hold — process locally as fallback
                 action = 0
 
         if action != 6:
-            # Determine destination
             if action == 0:
                 destination = job.origin
             else:
                 dest_map = {1: "CA", 2: "TX", 3: "VA", 4: "OR", 5: "AZ"}
                 destination = dest_map[action]
 
-            # Calculate transfer cost
             transfer_cost = self.network_model.get_transfer_cost(
                 job.origin, destination, job.compute_units
             )
 
-            # Check SLA violation
             transfer_latency = self.network_model.get_transfer_latency(job.origin, destination)
             total_time = transfer_latency + job.processing_time_hours
             sla_violated = (
                 total_time > job.max_latency_hours if job.max_latency_hours > 0 else False
             )
 
-            # Check capacity
             available = self.grid_model.get_available_capacity(destination)
-            capacity_exceeded = job.compute_units > available * 1000  # Scale check
+            capacity_exceeded = job.compute_units > available * 1000
 
-            # Get renewable/carbon data at destination
             renewable_states = self.renewable_model.get_all_states(self.current_hour)
             renewable_fracs = {loc: renewable_states[loc]["renewable_fraction"] for loc in LOCATION_IDS}
             grid_states = self.grid_model.get_all_states(self.current_hour, renewable_fracs)
@@ -311,10 +298,8 @@ class DataCentreEnv(gym.Env):
                 "renewable_fraction": renewable_frac_dest,
             }
 
-            # Compute reward
             reward = self._compute_reward(action_result, job)
 
-            # Update state
             self.grid_model.update_utilisation(destination, job.compute_units)
             self.total_jobs_processed += 1
             self.total_renewable_used += renewable_frac_dest
@@ -322,7 +307,6 @@ class DataCentreEnv(gym.Env):
             if sla_violated:
                 self.total_sla_violations += 1
 
-            # Track carbon/cost savings
             carbon_saved = (local_carbon - routed_carbon) * job.compute_units / 1000.0
             cost_saved = (local_cost - routed_cost) * job.compute_units
             self.total_carbon_saved += carbon_saved
@@ -331,7 +315,6 @@ class DataCentreEnv(gym.Env):
             if destination != job.origin:
                 self.total_jobs_routed += 1
 
-            # Log the decision
             self.episode_log.append({
                 "step": self.current_step,
                 "hour": self.current_hour,
@@ -344,7 +327,6 @@ class DataCentreEnv(gym.Env):
                 "reward": reward,
             })
 
-        # Advance time and get next job
         self._advance_time()
         self.current_job = self._get_next_routable_job()
 

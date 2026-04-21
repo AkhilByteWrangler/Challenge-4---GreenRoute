@@ -36,16 +36,13 @@ class NetworkCostModel:
     """Models inter-region transfer costs and network latency."""
 
     def __init__(self, seed: int = 42):
+        """Initialize network model with inter-region transfer costs and latencies."""
         self.rng = np.random.RandomState(seed)
         self.transfer_costs = TRANSFER_COST_MATRIX.copy()
         self.latencies = LATENCY_MATRIX.copy()
 
     def get_transfer_cost(self, origin: str, destination: str, compute_units: float) -> float:
-        """
-        Calculate the network transfer cost ($) for routing a job.
-        
-        Cost depends on origin-destination pair and job size.
-        """
+        """Calculate network transfer cost including stochastic congestion surcharge."""
         if origin == destination:
             return 0.0
 
@@ -53,28 +50,25 @@ class NetworkCostModel:
         data_size_gb = compute_units * DATA_PER_COMPUTE
         total_cost = cost_per_gb * data_size_gb
 
-        # Add small random congestion surcharge
         congestion = self.rng.uniform(0, 0.1) * total_cost
         return float(total_cost + congestion)
 
     def get_transfer_latency(self, origin: str, destination: str) -> float:
-        """Get network latency (hours) for transferring between locations."""
+        """Get network latency (hours) including propagation and transfer overhead."""
         if origin == destination:
             return 0.0
 
         latency_ms = self.latencies.get((origin, destination), 50)
-        # Convert ms to hours and add transfer time (data size dependent)
         base_latency_hours = latency_ms / (3600 * 1000)
-        # Add realistic data transfer time (assume 10 Gbps link)
-        transfer_overhead = 0.01  # ~36 seconds base overhead
+        transfer_overhead = 0.01
         return float(base_latency_hours + transfer_overhead)
 
     def get_cost_matrix_sum(self) -> float:
-        """Get the sum of all transfer costs (used as a global state feature)."""
+        """Get sum of all inter-region transfer costs for state representation."""
         return float(sum(self.transfer_costs.values()))
 
     def get_cost_matrix_array(self) -> np.ndarray:
-        """Get transfer cost matrix as a 5x5 numpy array."""
+        """Get transfer cost matrix as 5x5 array."""
         n = len(LOCATION_IDS)
         matrix = np.zeros((n, n))
         for i, loc_i in enumerate(LOCATION_IDS):
@@ -84,7 +78,7 @@ class NetworkCostModel:
 
     def would_violate_sla(self, origin: str, destination: str,
                           max_latency_hours: float, processing_time: float) -> bool:
-        """Check if routing this job would violate its latency SLA."""
+        """Check if routing would violate job latency SLA."""
         transfer_time = self.get_transfer_latency(origin, destination)
         total_time = transfer_time + processing_time
         return total_time > max_latency_hours if max_latency_hours > 0 else (origin != destination)
