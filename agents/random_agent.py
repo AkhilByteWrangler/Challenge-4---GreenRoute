@@ -4,7 +4,7 @@ import numpy as np
 
 
 class RandomAgent:
-    """Selects a random valid action each step. Baseline for comparison."""
+    """Baseline agent that selects uniformly from valid actions."""
 
     def __init__(self, num_actions: int = 7, seed: int = 42):
         self.num_actions = num_actions
@@ -12,6 +12,7 @@ class RandomAgent:
         self.name = "Random"
 
     def select_action(self, state: np.ndarray, action_mask: np.ndarray = None) -> int:
+        """Select a random valid action, respecting action_mask if provided."""
         if action_mask is not None:
             valid = np.where(action_mask)[0]
             return int(self.rng.choice(valid))

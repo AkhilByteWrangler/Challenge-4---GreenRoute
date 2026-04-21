@@ -1,38 +1,23 @@
-"""
-Proximal Policy Optimization (PPO) agent for GreenRoute.
-
-Actor-Critic architecture with:
-  - Separate actor (policy) and critic (value) networks
-  - GAE (Generalized Advantage Estimation)
-  - Clipped surrogate objective
-  - Entropy bonus for exploration
-  - Action masking for hard constraints
-  - Learning rate annealing
-  - Gradient clipping
-"""
+"""Proximal Policy Optimization (PPO) agent for GreenRoute."""
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 
 
 class ActorCritic(nn.Module):
-    """
-    Shared-backbone Actor-Critic network.
-
-    Architecture:
-      state (47) → shared MLP → actor head (7 logits)
-                               → critic head (1 value)
-    """
+    """Shared-backbone actor-critic network with separate policy and value heads."""
 
     def __init__(self, state_dim: int = 47, num_actions: int = 7,
-                 hidden_dims: List[int] = [256, 128]):
+                 hidden_dims: Optional[List[int]] = None):
         super().__init__()
 
-        # Shared feature backbone
+        if hidden_dims is None:
+            hidden_dims = [256, 128]
+
         layers = []
         prev = state_dim
         for h in hidden_dims:
@@ -61,29 +46,26 @@ class ActorCritic(nn.Module):
         # Orthogonal init (PPO best practice)
         self._init_weights()
 
-    def _init_weights(self):
+    def _init_weights(self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
                 nn.init.constant_(m.bias, 0)
-        # Smaller init for policy output (prevents extreme initial policies)
         nn.init.orthogonal_(self.actor[-1].weight, gain=0.01)
         nn.init.orthogonal_(self.critic[-1].weight, gain=1.0)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return policy logits and state value."""
         features = self.backbone(x)
         logits = self.actor(features)
         value = self.critic(features)
         return logits, value.squeeze(-1)
 
-    def get_action_and_value(self, state, action_mask=None, action=None):
-        """
-        Sample action from policy (or evaluate given action).
-        Returns: action, log_prob, entropy, value
-        """
+    def get_action_and_value(self, state: torch.Tensor, action_mask: Optional[torch.Tensor] = None,
+                           action: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Sample or evaluate action; return action, log_prob, entropy, and value."""
         logits, value = self.forward(state)
 
-        # Mask invalid actions by setting logits to -inf
         if action_mask is not None:
             logits = logits.masked_fill(~action_mask, float('-inf'))
 
@@ -96,7 +78,8 @@ class ActorCritic(nn.Module):
         entropy = dist.entropy()
         return action, log_prob, entropy, value
 
-    def get_value(self, state):
+    def get_value(self, state: torch.Tensor) -> torch.Tensor:
+        """Compute state value using critic head."""
         features = self.backbone(state)
         return self.critic(features).squeeze(-1)
 
@@ -104,16 +87,18 @@ class ActorCritic(nn.Module):
 class RolloutBuffer:
     """Stores trajectory data for PPO updates."""
 
-    def __init__(self):
-        self.states = []
-        self.actions = []
-        self.log_probs = []
-        self.rewards = []
-        self.values = []
-        self.dones = []
-        self.action_masks = []
+    def __init__(self) -> None:
+        self.states: List[torch.Tensor] = []
+        self.actions: List[torch.Tensor] = []
+        self.log_probs: List[torch.Tensor] = []
+        self.rewards: List[float] = []
+        self.values: List[torch.Tensor] = []
+        self.dones: List[float] = []
+        self.action_masks: List[torch.Tensor] = []
 
-    def add(self, state, action, log_prob, reward, value, done, action_mask):
+    def add(self, state: torch.Tensor, action: torch.Tensor, log_prob: torch.Tensor,
+            reward: float, value: torch.Tensor, done: float, action_mask: torch.Tensor) -> None:
+        """Store transition data for PPO update."""
         self.states.append(state)
         self.actions.append(action)
         self.log_probs.append(log_prob)
@@ -122,7 +107,8 @@ class RolloutBuffer:
         self.dones.append(done)
         self.action_masks.append(action_mask)
 
-    def get(self):
+    def get(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return all collected trajectory data as stacked tensors."""
         return (
             torch.stack(self.states),
             torch.stack(self.actions),
@@ -133,7 +119,7 @@ class RolloutBuffer:
             torch.stack(self.action_masks),
         )
 
-    def clear(self):
+    def clear(self) -> None:
         self.states.clear()
         self.actions.clear()
         self.log_probs.clear()
@@ -142,21 +128,12 @@ class RolloutBuffer:
         self.dones.clear()
         self.action_masks.clear()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.rewards)
 
 
 class PPOAgent:
-    """
-    PPO Agent with:
-      - GAE advantage estimation (λ=0.95)
-      - Clipped surrogate objective (ε=0.2)
-      - Value function clipping
-      - Entropy bonus with annealing
-      - Gradient clipping (max_grad_norm=0.5)
-      - Learning rate linear annealing
-      - Mini-batch updates over multiple epochs
-    """
+    """Proximal Policy Optimization agent using actor-critic with GAE advantage estimation."""
 
     def __init__(self, state_dim: int = 47, num_actions: int = 7, seed: int = 42,
                  hidden_dims: List[int] = [256, 128],
@@ -207,7 +184,8 @@ class PPOAgent:
         self.losses = {"policy": [], "value": [], "entropy": [], "total": []}
 
         # For train_agent compatibility
-        self.epsilon = 0.0  # PPO doesn't use epsilon
+        self.epsilon = 0.0
+        self._ones_mask = torch.ones(num_actions, dtype=torch.bool)
 
     def select_action(self, state: np.ndarray, action_mask: np.ndarray = None) -> int:
         """Select action using current policy."""
@@ -220,12 +198,11 @@ class PPOAgent:
                 state_t, mask_t
             )
 
-        # Store for buffer
         self._last_state = state_t.squeeze(0)
         self._last_action = action.squeeze(0)
         self._last_log_prob = log_prob.squeeze(0)
         self._last_value = value.squeeze(0)
-        self._last_mask = mask_t.squeeze(0) if mask_t is not None else torch.ones(self.num_actions, dtype=torch.bool)
+        self._last_mask = mask_t.squeeze(0) if mask_t is not None else self._ones_mask
 
         return int(action.item())
 
@@ -358,7 +335,7 @@ class PPOAgent:
         self.losses["total"].append(loss.item())
 
     def get_policy_probs(self, state: np.ndarray, action_mask: np.ndarray = None) -> np.ndarray:
-        """Get action probabilities for a state (for export/visualisation)."""
+        """Get action probabilities for a state."""
         with torch.no_grad():
             state_t = torch.FloatTensor(state).unsqueeze(0).to(self.device)
             logits, value = self.network(state_t)
@@ -376,6 +353,7 @@ class PPOAgent:
         return v.item()
 
     def save(self, path: str):
+        """Save network and optimizer state to checkpoint."""
         torch.save({
             "network": self.network.state_dict(),
             "optimizer": self.optimizer.state_dict(),
@@ -384,6 +362,7 @@ class PPOAgent:
         }, path)
 
     def load(self, path: str):
+        """Load network and optimizer state from checkpoint."""
         checkpoint = torch.load(path, map_location=self.device)
         self.network.load_state_dict(checkpoint["network"])
         self.optimizer.load_state_dict(checkpoint["optimizer"])
@@ -391,13 +370,7 @@ class PPOAgent:
         self.update_count = checkpoint["update_count"]
 
     def export_weights_for_js(self) -> dict:
-        """
-        Export actor weights to JSON-serialisable dict for the browser demo.
-
-        The JS demo uses a linear actor: softmax(W · features + b)
-        We export the LAST linear layer of the actor head, plus a simplified
-        feature transform from the backbone.
-        """
+        """Export network weights as JSON-serializable dict for browser demo."""
         sd = self.network.state_dict()
 
         # For the JS demo we need a compact representation.

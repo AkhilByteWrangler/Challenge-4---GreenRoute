@@ -2,47 +2,31 @@
 
 import numpy as np
 
+CARBON_INDEX = 2
+FEATURES_PER_LOCATION = 7
+NUM_REMOTE_LOCATIONS = 5
+
 
 class GreedyAgent:
-    """
-    Always routes to the location with the lowest carbon intensity right now.
-    
-    This is the baseline that looks good in aggregate but makes three critical mistakes:
-    1. Ignores the future (overloads the best location)
-    2. Ignores forecasts (cannot anticipate renewable windows)
-    3. Creates instability (all jobs pile into the same location)
-    """
+    """Baseline agent that always selects the location with lowest carbon intensity."""
 
     def __init__(self, num_actions: int = 7, seed: int = 42):
         self.num_actions = num_actions
         self.name = "Greedy"
 
     def select_action(self, state: np.ndarray, action_mask: np.ndarray = None) -> int:
-        """
-        Select the location with the lowest carbon intensity.
-        
-        State layout per location (7 features each):
-          [0] solar_irradiance, [1] wind_speed, [2] carbon_intensity,
-          [3] utilisation, [4] available_capacity, [5] energy_cost, [6] pue
-        """
-        # Extract carbon intensity for each of the 5 locations
-        carbon_intensities = []
-        for i in range(5):
-            offset = i * 7  # 7 features per location
-            carbon = state[offset + 2]  # carbon_intensity is the 3rd feature
-            carbon_intensities.append(carbon)
+        """Select location with lowest carbon intensity."""
+        carbon_intensities = state[CARBON_INDEX::FEATURES_PER_LOCATION][:NUM_REMOTE_LOCATIONS]
 
-        # Actions 1-5 correspond to CA, TX, VA, OR, AZ
-        # Find the location with minimum carbon intensity among valid actions
-        best_action = 0  # Default: local
+        best_action = 0
         best_carbon = float("inf")
 
-        for action_idx in range(1, 6):  # Actions 1 through 5
-            loc_idx = action_idx - 1
+        for action_idx in range(1, NUM_REMOTE_LOCATIONS + 1):
             if action_mask is not None and not action_mask[action_idx]:
                 continue
-            if carbon_intensities[loc_idx] < best_carbon:
-                best_carbon = carbon_intensities[loc_idx]
+            carbon = carbon_intensities[action_idx - 1]
+            if carbon < best_carbon:
+                best_carbon = carbon
                 best_action = action_idx
 
         return best_action

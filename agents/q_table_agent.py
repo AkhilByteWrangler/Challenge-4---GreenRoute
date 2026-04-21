@@ -94,17 +94,16 @@ class QTableAgent:
     def select_action(self, state: np.ndarray, action_mask: np.ndarray = None) -> int:
         """Epsilon-greedy action selection with action masking."""
         if self.rng.random() < self.epsilon:
-            # Explore: random valid action
             if action_mask is not None:
                 valid = np.where(action_mask)[0]
                 return int(self.rng.choice(valid))
             return int(self.rng.randint(0, self.num_actions))
 
-        # Exploit: best Q-value among valid actions
         state_key = self._discretise_state(state)
-        q_values = self.q_table[state_key].copy()
+        q_values = self.q_table[state_key]
 
         if action_mask is not None:
+            q_values = q_values.copy()
             q_values[~action_mask] = -np.inf
 
         return int(np.argmax(q_values))
