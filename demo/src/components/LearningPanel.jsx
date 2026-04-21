@@ -1,14 +1,34 @@
 import { getLearningMetrics } from '../simulation/engine';
 import { LOCATIONS, LOC_IDS } from '../simulation/locations';
 
-export default function LearningPanel({ simState }) {
+export default function LearningPanel({ simState, selectedAgent = 'PPO' }) {
   const m = getLearningMetrics();
-  if (!m || m.totalSteps < 1) return null;
 
+  return (
+    <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.1]">
+      <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-600 dark:text-slate-500 mb-3 font-semibold flex items-center gap-2">
+        <span className="w-1 h-3 rounded-full bg-accent-green" />
+        {selectedAgent} Agent
+      </h3>
+
+      {!m || m.totalSteps < 1 ? (
+        <div className="text-[10px] text-slate-500 dark:text-slate-400 py-4">
+          Waiting for metrics...
+        </div>
+      ) : (
+        <>
+          {renderMetrics(m)}
+        </>
+      )}
+    </div>
+  );
+}
+
+function renderMetrics(m) {
   const totalActions = Object.values(m.actionDistribution).reduce((a, b) => a + b, 0) || 1;
 
-  // Entropy: max entropy for 5 actions = ln(5) ≈ 1.61
-  const maxEntropy = Math.log(5);
+  // Entropy: max entropy for 7 actions = ln(7) ≈ 1.95
+  const maxEntropy = Math.log(7);
   const entropyPct = Math.min(100, (m.epsilon / maxEntropy) * 100);
   const convergencePct = 100 - entropyPct;
 
@@ -19,11 +39,7 @@ export default function LearningPanel({ simState }) {
   else if (m.epsilon < 1.0) { phase = 'Refining Policy'; phaseColor = 'text-accent-cyan'; }
 
   return (
-    <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.1]">
-      <h3 className="text-[10px] uppercase tracking-[1.5px] text-slate-600 dark:text-slate-500 mb-3 font-semibold flex items-center gap-2">
-        <span className="w-1 h-3 rounded-full bg-accent-green" />
-        PPO Agent (Actor-Critic)
-      </h3>
+    <>
 
       {/* Phase indicator */}
       <div className="flex items-center justify-between mb-3">
@@ -78,9 +94,9 @@ export default function LearningPanel({ simState }) {
 
       {/* Architecture info */}
       <div className="text-[9px] text-slate-600 dark:text-slate-500 mb-3 font-mono leading-relaxed">
-        67-256-256 (backbone) - 5 actions<br/>
+        67-256-256 (backbone) - 7 actions<br/>
         Trained: 5000 ep · Stochastic weather<br/>
-        GAE(λ=0.95) · Clip(ε=0.2) · 8 epochs
+        GAE(λ=0.95) · Clip(ε=0.2) · 10 epochs
       </div>
 
       {/* Action distribution */}
@@ -111,6 +127,6 @@ export default function LearningPanel({ simState }) {
           );
         })}
       </div>
-    </div>
+    </>
   );
 }

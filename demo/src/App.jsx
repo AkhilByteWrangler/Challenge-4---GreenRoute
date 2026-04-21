@@ -13,7 +13,7 @@ import Timeline from './components/Timeline';
 import TrainingInfo from './components/TrainingInfo';
 import WeatherTicker from './components/WeatherTicker';
 import useSimulation from './hooks/useSimulation';
-import { loadTrainedPolicy, isPolicyLoaded, getTrainingMeta, getFinalMetrics, getTrainingCurves } from './simulation/engine';
+import { loadTrainedPolicy, isPolicyLoaded, getTrainingMeta, getFinalMetrics, getTrainingCurves, setSelectedAgent as setEngineAgent } from './simulation/engine';
 
 export default function App() {
   const [showIntro, setShowIntro] = useState(true);
@@ -33,7 +33,9 @@ export default function App() {
       setPolicyLoaded(isPolicyLoaded());
       if (data?.metadata?.agents_trained) {
         setAgents(data.metadata.agents_trained);
-        setSelectedAgent(data.metadata.agents_trained[0] || 'PPO');
+        const firstAgent = data.metadata.agents_trained[0] || 'PPO';
+        setSelectedAgent(firstAgent);
+        setEngineAgent(firstAgent);
       }
     });
   }, []);
@@ -78,7 +80,10 @@ export default function App() {
         setDarkMode={setDarkMode}
         agents={agents}
         selectedAgent={selectedAgent}
-        onAgentChange={setSelectedAgent}
+        onAgentChange={(agent) => {
+          setSelectedAgent(agent);
+          setEngineAgent(agent);
+        }}
       />
 
       {/* Weather event alerts */}
@@ -109,7 +114,7 @@ export default function App() {
 
         {/* Side panel — responsive, scrollable */}
         <div className="w-full lg:w-96 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-white/[0.1] bg-white dark:bg-slate-900/50 overflow-y-auto max-h-64 lg:max-h-none">
-          <LearningPanel simState={sim.simState} />
+          <LearningPanel simState={sim.simState} selectedAgent={selectedAgent} />
           <QueuePanel simState={sim.simState} />
           <JobPanel job={sim.currentJob} />
           <DecisionPanel decision={sim.currentDecision} job={sim.currentJob} />
