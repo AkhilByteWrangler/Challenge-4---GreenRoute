@@ -1,55 +1,59 @@
 """
 Metrics tracking for GreenRoute evaluation.
 
-Tracks carbon saved, cost saved, SLA compliance, renewable usage, 
+Tracks carbon saved, cost saved, SLA compliance, renewable usage,
 and generates summary statistics for comparison across agents.
 """
 
 import numpy as np
 from typing import Dict, List, Optional
-from collections import defaultdict
+
+# Action types
+ACTION_HOLD = 6
+ACTION_LOCAL = 0
+
+# Default episode state template
+DEFAULT_EPISODE = {
+    "carbon_saved": 0.0,
+    "cost_saved": 0.0,
+    "total_reward": 0.0,
+    "jobs_processed": 0,
+    "sla_violations": 0,
+    "renewable_fraction_sum": 0.0,
+    "jobs_routed": 0,
+    "jobs_held": 0,
+    "jobs_local": 0,
+    "routing_decisions": [],
+}
 
 
 class MetricsTracker:
     """Comprehensive metrics tracking across episodes and agents."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.episode_metrics: List[Dict] = []
-        self.current_episode = {
-            "carbon_saved": 0.0,
-            "cost_saved": 0.0,
-            "total_reward": 0.0,
-            "jobs_processed": 0,
-            "sla_violations": 0,
-            "renewable_fraction_sum": 0.0,
-            "jobs_routed": 0,
-            "jobs_held": 0,
-            "jobs_local": 0,
-            "routing_decisions": [],
-        }
+        self.current_episode = DEFAULT_EPISODE.copy()
 
-    def record_step(self, action: int, reward: float, info: dict):
+    def record_step(self, action: int, reward: float, info: Dict) -> None:
         """Record metrics for a single step."""
-        self.current_episode["total_reward"] += reward
-        self.current_episode["jobs_processed"] += 1
+        ep = self.current_episode
+        ep["total_reward"] += reward
+        ep["jobs_processed"] += 1
 
         action_result = info.get("action_result", {})
         if action_result.get("sla_violated", False):
-            self.current_episode["sla_violations"] += 1
+            ep["sla_violations"] += 1
 
-        if action == 6:
-            self.current_episode["jobs_held"] += 1
-        elif action == 0:
-            self.current_episode["jobs_local"] += 1
+        if action == ACTION_HOLD:
+            ep["jobs_held"] += 1
+        elif action == ACTION_LOCAL:
+            ep["jobs_local"] += 1
         else:
-            self.current_episode["jobs_routed"] += 1
+            ep["jobs_routed"] += 1
 
-        carbon_saved = info.get("total_carbon_saved", 0.0)
-        self.current_episode["carbon_saved"] = carbon_saved
-        self.current_episode["cost_saved"] = info.get("total_cost_saved", 0.0)
-
-        rf = action_result.get("renewable_fraction", 0.0)
-        self.current_episode["renewable_fraction_sum"] += rf
+        ep["carbon_saved"] = info.get("total_carbon_saved", 0.0)
+        ep["cost_saved"] = info.get("total_cost_saved", 0.0)
+        ep["renewable_fraction_sum"] += action_result.get("renewable_fraction", 0.0)
 
     def end_episode(self) -> Dict:
         """Finalise and store metrics for the completed episode."""
@@ -73,37 +77,31 @@ class MetricsTracker:
         }
 
         self.episode_metrics.append(summary)
-
-        # Reset for next episode
-        self.current_episode = {
-            "carbon_saved": 0.0, "cost_saved": 0.0, "total_reward": 0.0,
-            "jobs_processed": 0, "sla_violations": 0, "renewable_fraction_sum": 0.0,
-            "jobs_routed": 0, "jobs_held": 0, "jobs_local": 0,
-            "routing_decisions": [],
-        }
+        self.current_episode = DEFAULT_EPISODE.copy()
 
         return summary
 
     def get_summary(self, last_n: Optional[int] = None) -> Dict:
         """Get aggregate summary across episodes."""
-        metrics = self.episode_metrics
-        if last_n is not None:
-            metrics = metrics[-last_n:]
+        metrics = self.episode_metrics[-last_n:] if last_n else self.episode_metrics
 
         if not metrics:
             return {"num_episodes": 0}
 
+        rewards = [m["total_reward"] for m in metrics]
+        carbon_totals = [m["carbon_saved_total"] for m in metrics]
+
         return {
             "num_episodes": len(metrics),
-            "avg_reward": np.mean([m["total_reward"] for m in metrics]),
-            "avg_carbon_saved": np.mean([m["carbon_saved_total"] for m in metrics]),
+            "avg_reward": np.mean(rewards),
+            "avg_carbon_saved": np.mean(carbon_totals),
             "avg_carbon_per_job": np.mean([m["carbon_saved_per_job"] for m in metrics]),
             "avg_sla_compliance": np.mean([m["sla_compliance"] for m in metrics]),
             "avg_renewable_fraction": np.mean([m["renewable_fraction_avg"] for m in metrics]),
             "avg_routing_fraction": np.mean([m["routing_fraction"] for m in metrics]),
             "avg_hold_fraction": np.mean([m["hold_fraction"] for m in metrics]),
-            "std_reward": np.std([m["total_reward"] for m in metrics]),
-            "std_carbon_saved": np.std([m["carbon_saved_total"] for m in metrics]),
+            "std_reward": np.std(rewards),
+            "std_carbon_saved": np.std(carbon_totals),
         }
 
     def get_learning_curves(self) -> Dict[str, List[float]]:
@@ -116,9 +114,7 @@ class MetricsTracker:
             "routing_fraction": [m["routing_fraction"] for m in self.episode_metrics],
         }
 
+    @staticmethod
     def compare_agents(agent_metrics: Dict[str, "MetricsTracker"]) -> Dict:
         """Compare summary metrics across multiple agents."""
-        comparison = {}
-        for agent_name, tracker in agent_metrics.items():
-            comparison[agent_name] = tracker.get_summary()
-        return comparison
+        return {agent_name: tracker.get_summary() for agent_name, tracker in agent_metrics.items()}
