@@ -10,14 +10,14 @@ export const LOCATIONS = {
     id: 'TX', name: 'Texas', emoji: '💨', primary: 'wind',
     lat: 32.78, lon: -96.80, colour: '#00BCD4', utcOffset: -6,
     peakSolarStart: 11, peakSolarEnd: 15, avgWind: 7.8,
-    solarCF: 0.24, windCF: 0.35, baseCarbonIntensity: 400,
+    solarCF: 0.24, windCF: 0.35, baseCarbonIntensity: 310,
     baseCost: 0.09, basePUE: 1.25, capacity: 4500,
   },
   VA: {
     id: 'VA', name: 'Virginia', emoji: '🏭', primary: 'mixed',
     lat: 39.04, lon: -77.49, colour: '#FF5252', utcOffset: -5,
     peakSolarStart: 11, peakSolarEnd: 14, avgWind: 3.2,
-    solarCF: 0.16, windCF: 0.08, baseCarbonIntensity: 500,
+    solarCF: 0.16, windCF: 0.08, baseCarbonIntensity: 380,
     baseCost: 0.11, basePUE: 1.20, capacity: 6000,
   },
   OR: {

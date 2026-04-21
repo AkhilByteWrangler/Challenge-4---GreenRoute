@@ -190,7 +190,7 @@ The agent learns **different strategies** for each type. A greedy agent treats t
 
 **Why it matters**: RL agents trained for 5000 episodes may not develop perfectly sharp reactions to rare weather events. The safety layer ensures dramatic rerouting during carbon spikes.
 
-**How**: If the NN's chosen DC has >15% higher carbon than the best available, the safety layer overrides to the cleaner DC. This combines the NN's learned policy with hard safety guarantees.
+**How**: If the NN's chosen DC has >50% higher carbon than the best available, the safety layer overrides to the cleaner DC. This combines the NN's learned policy with hard safety guarantees — the NN spreads load across reasonably clean DCs, while the safety layer catches extreme weather spikes (storm ×2.5, cold snap ×3).
 
 ---
 

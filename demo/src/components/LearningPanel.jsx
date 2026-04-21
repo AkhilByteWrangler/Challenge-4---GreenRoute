@@ -68,14 +68,14 @@ export default function LearningPanel({ simState }) {
 
       {/* Architecture info */}
       <div className="text-[9px] text-slate-600 mb-3 font-mono leading-relaxed">
-        47→256→256 (backbone) → 5 actions<br/>
+        67→256→256 (backbone) → 5 actions<br/>
         Trained: 5000 ep · Stochastic weather<br/>
         GAE(λ=0.95) · Clip(ε=0.2) · 8 epochs
       </div>
 
       {/* Action distribution */}
       <div className="space-y-1.5">
-        <div className="text-[10px] text-slate-500 mb-1">Policy π(a|s) Distribution</div>
+        <div className="text-[10px] text-slate-500 mb-1">Policy π(a|s) — Last 30 Steps</div>
         {LOC_IDS.map((id) => {
           const count = m.actionDistribution[id] || 0;
           const pct = (count / totalActions) * 100;

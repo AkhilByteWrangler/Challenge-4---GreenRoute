@@ -200,8 +200,15 @@ function computeSnapshot(utcHour, utilisations) {
     // Carbon intensity (before event)
     const demandFactor = 1.0 + 0.2 * Math.exp(-0.5 * Math.pow((localHour - 17) / 3, 2));
     let rfPre = Math.max(0, Math.min(1, solarC + windC + hydro));
-    const renewOffset = rfPre * loc.baseCarbonIntensity * 0.6;
-    let carbon = Math.max(20, loc.baseCarbonIntensity * demandFactor - renewOffset + (Math.random() - 0.5) * 12);
+    const renewOffset = rfPre * loc.baseCarbonIntensity * 0.8;
+    // Peak-solar bonus: when solar > 500 W/m², the grid is flooded with
+    // cheap solar, displacing fossil plants. This makes high-solar DCs
+    // competitive even if their base carbon is high (e.g. VA at 500).
+    const solarFloodBonus = solar > 500 ? (solar - 500) / 500 * loc.baseCarbonIntensity * 0.35 : 0;
+    // Wind flood bonus: strong wind (>8 m/s) displaces fossil generation.
+    // TX with avgWind 7.8 regularly hits 10+ m/s, making it competitive at night.
+    const windFloodBonus = wind > 8 ? (wind - 8) / 12 * loc.baseCarbonIntensity * 0.3 : 0;
+    let carbon = Math.max(20, loc.baseCarbonIntensity * demandFactor - renewOffset - solarFloodBonus - windFloodBonus + (Math.random() - 0.5) * 12);
 
     // ── Apply weather events (cold snaps, storms, etc.) ──
     const evResult = applyWeatherEvent(locId, solar, wind, hydro, carbon);
@@ -359,18 +366,24 @@ let _nnLoaded = false;
 let _stepCount = 0;
 let _rewardHistory = [];
 let _actionCounts = {};
+let _recentActions = [];  // rolling window of last 30 actions
+const RECENT_WINDOW = 30;
 let _policyEntropy = 0;
 
 // ── Learning metrics (exported for UI) ──
 export function getLearningMetrics() {
   const recent = _rewardHistory.slice(-50);
   const avgReward = recent.length > 0 ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
+  // Compute recent distribution from rolling window
+  const recentDist = {};
+  for (const id of LOC_IDS) recentDist[id] = 0;
+  for (const a of _recentActions) recentDist[a] = (recentDist[a] || 0) + 1;
   return {
     epsilon: _policyEntropy,
     statesExplored: _nnLoaded ? 1 : 0,
     totalSteps: _stepCount,
     avgReward50: avgReward,
-    actionDistribution: { ...(_actionCounts) },
+    actionDistribution: recentDist,
     qTableSize: _nnLoaded ? 1 : 0,
   };
 }
@@ -398,6 +411,7 @@ function initPPO() {
   _stepCount = 0;
   _rewardHistory = [];
   _actionCounts = {};
+  _recentActions = [];
   _policyEntropy = 0;
   for (const id of LOC_IDS) _actionCounts[id] = 0;
   // Weights loaded by _loadNNWeights when JSON arrives
@@ -664,37 +678,19 @@ export function agentDecide(job, snap) {
     prob = bestRouteProb;
 
     // ── Carbon-aware safety layer ──
-    // The NN learned balanced routing (CA ~38%, AZ ~40%, OR ~14%)
-    // with small weather-awareness (~4-6% shifts). The safety layer
-    // amplifies this: if the chosen DC has much higher carbon than
-    // the best available, reroute. During weather events, carbon
-    // spikes are large (cold snap ×2, storm ×1.5), so this naturally
-    // triggers rerouting away from affected DCs.
+    // Only override the NN when the chosen DC is dramatically worse
+    // than the best available. A 1.5× threshold lets the NN spread
+    // load across DCs that are reasonably clean, while still catching
+    // storm/cold-snap spikes (which push carbon 2-3×).
     const chosenCarbon = snap[LOC_IDS[action]]?.carbon ?? 999;
     let lowestCarbonAction = action, lowestCarbon = chosenCarbon;
     for (const a of feasible) {
       const c = snap[LOC_IDS[a]]?.carbon ?? 999;
       if (c < lowestCarbon) { lowestCarbon = c; lowestCarbonAction = a; }
     }
-    if (chosenCarbon > lowestCarbon * 1.15) {
+    if (chosenCarbon > lowestCarbon * 1.5) {
       action = lowestCarbonAction;
       prob = routeProbs[action] || 0.5;
-    }
-
-    // Avoid routing to origin (ensures arrows fly across the map)
-    const originIdx = LOC_IDS.indexOf(job.origin);
-    if (action === originIdx && feasible.length > 1) {
-      let secondBest = -1, secondCarbon = Infinity;
-      for (const a of feasible) {
-        if (a !== originIdx) {
-          const c = snap[LOC_IDS[a]]?.carbon ?? 999;
-          if (c < secondCarbon) { secondCarbon = c; secondBest = a; }
-        }
-      }
-      if (secondBest >= 0) {
-        action = secondBest;
-        prob = routeProbs[action] || 0.5;
-      }
     }
 
     probs = routeProbs;
@@ -722,6 +718,8 @@ export function agentDecide(job, snap) {
 
   _stepCount++;
   _actionCounts[dest] = (_actionCounts[dest] || 0) + 1;
+  _recentActions.push(dest);
+  if (_recentActions.length > RECENT_WINDOW) _recentActions.shift();
 
   // Build output
   const destLoc = LOCATIONS[dest];

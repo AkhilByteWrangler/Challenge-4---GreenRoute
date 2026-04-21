@@ -277,27 +277,6 @@ function drawDayNightOverlay(ctx, utcHour, W, H) {
   ctx.fillStyle = nightGrad;
   ctx.fillRect(0, 0, W, H);
 
-  // Sun glow
-  const [sx, sy] = project(Math.max(-125, Math.min(-67, sLon)), 48, W, H);
-  if (sx > -100 && sx < W + 100) {
-    const sunGrad = ctx.createRadialGradient(sx, sy - 20, 0, sx, sy - 20, W * 0.35);
-    sunGrad.addColorStop(0, 'rgba(255,200,80,0.12)');
-    sunGrad.addColorStop(0.3, 'rgba(255,180,60,0.05)');
-    sunGrad.addColorStop(1, 'rgba(255,180,60,0)');
-    ctx.fillStyle = sunGrad;
-    ctx.fillRect(0, 0, W, H);
-
-    // Sun disc
-    ctx.beginPath();
-    ctx.arc(sx, Math.max(sy - 25, 15), 12, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,220,100,0.8)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(sx, Math.max(sy - 25, 15), 20, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,220,100,0.2)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
 }
 
 // ── 7. Weather: moving fronts, cloud banks, rain, wind field ──
