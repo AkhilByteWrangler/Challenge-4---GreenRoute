@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-Train RL agents and export learned policies as JSON for the React demo.
+Train Q-Learning and DQN agents, then export policies as JSON for browser demo.
 
-Trains:
-  1. Q-Learning agent  — 500 episodes → exports Q-table + discretised policy
-  2. DQN agent          — 500 episodes → exports neural-net-evaluated policy table
-
-Outputs:
-  demo/public/trained_policy.json   — the learned policy the React demo loads
+Trains agents for 500 episodes and exports learned policies to demo/public/trained_policy.json
 """
 
-import sys, os, json, time
+import sys
+import os
+import json
+import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,24 +20,30 @@ from agents.random_agent import RandomAgent
 from agents.greedy_agent import GreedyAgent
 from evaluation.metrics import MetricsTracker
 
+# Training constants
+SEED = 42
+N_EPISODES_MAIN = 500
+N_EPISODES_BASELINE = 100
+N_SAMPLES_DQN = 500
+DISCRETISATION_BINS = 8
+LOGGING_INTERVAL = 50
+POLICY_TABLE_LIMIT = 5000
+
 
 def train_agent(agent, env, num_episodes, seed=42, label=""):
-    """Train an agent and return metrics tracker + episode rewards."""
+    """Train an agent and return metrics tracker + episode metrics."""
     metrics = MetricsTracker()
     episode_rewards = []
     episode_carbon = []
     episode_sla = []
     episode_renewable = []
 
-    print(f"\n{'='*60}")
-    print(f"  Training {label} — {num_episodes} episodes")
-    print(f"{'='*60}")
+    print(f"Training {label} ({num_episodes} episodes)")
 
     for ep in range(num_episodes):
         state, info = env.reset(seed=seed + ep)
         done = False
         ep_reward = 0.0
-        steps = 0
 
         while not done:
             action_mask = env.get_action_mask()
@@ -55,7 +59,6 @@ def train_agent(agent, env, num_episodes, seed=42, label=""):
             metrics.record_step(action, reward, info)
             state = next_state
             ep_reward += reward
-            steps += 1
             if done or truncated:
                 break
 
@@ -65,26 +68,21 @@ def train_agent(agent, env, num_episodes, seed=42, label=""):
         episode_sla.append(ep_summary['sla_compliance'])
         episode_renewable.append(ep_summary['renewable_fraction_avg'])
 
-        if (ep + 1) % 50 == 0:
-            last50_r = np.mean(episode_rewards[-50:])
-            last50_c = np.mean(episode_carbon[-50:])
-            last50_s = np.mean(episode_sla[-50:])
-            last50_re = np.mean(episode_renewable[-50:])
+        if (ep + 1) % LOGGING_INTERVAL == 0:
+            w = LOGGING_INTERVAL
+            last_r = np.mean(episode_rewards[-w:])
+            last_c = np.mean(episode_carbon[-w:])
+            last_s = np.mean(episode_sla[-w:])
+            last_re = np.mean(episode_renewable[-w:])
             eps = getattr(agent, 'epsilon', 'N/A')
-            print(f"  Ep {ep+1:4d} | Reward: {last50_r:7.1f} | Carbon: {last50_c:6.0f}g | "
-                  f"SLA: {last50_s:.1%} | Renew: {last50_re:.1%} | ε: {eps}")
+            print(f"  Ep {ep+1:4d} | Reward: {last_r:7.1f} | Carbon: {last_c:6.0f}g | "
+                  f"SLA: {last_s:.1%} | Renew: {last_re:.1%} | ε: {eps}")
 
     return metrics, episode_rewards, episode_carbon, episode_sla, episode_renewable
 
 
 def extract_dqn_policy_table(agent, env, n_samples=2000, seed=42):
-    """
-    Run the DQN through many states and record its preferred action.
-    Build a state→action lookup that the JS demo can use.
-    
-    We discretise the key state features into bins (same as Q-table approach)
-    and store the best action per bin combination.
-    """
+    """Build discretised state-action lookup from trained DQN."""
     import torch
     
     policy_table = {}
@@ -131,34 +129,15 @@ def extract_dqn_policy_table(agent, env, n_samples=2000, seed=42):
     return policy_table
 
 
-def discretise_state_for_export(state, n_bins=8):
-    """
-    Discretise the 47-dim state vector into a hashable key.
-    
-    Key features used (13 total):
-      - Solar irradiance per location (indices 0,7,14,21,28)
-      - Carbon intensity per location (indices 2,9,16,23,30)
-      - Time sin/cos (indices 35,36)
-      - Queue length (index 43)
-    """
+def discretise_state_for_export(state, n_bins=DISCRETISATION_BINS):
+    """Discretise 47-dim state into hashable key using 13 key features."""
     key_indices = [0, 7, 14, 21, 28, 2, 9, 16, 23, 30, 35, 36, 43]
-    features = [float(state[i]) for i in key_indices]
-    # Bin each feature into n_bins
-    discretised = []
-    for v in features:
-        b = int(np.clip(v * n_bins, 0, n_bins - 1))
-        discretised.append(b)
+    discretised = [int(np.clip(state[i] * n_bins, 0, n_bins - 1)) for i in key_indices]
     return ','.join(map(str, discretised))
 
 
 def build_feature_weight_policy(q_table_agent, env, seed=42):
-    """
-    Analyse the Q-table to extract effective feature weights.
-    
-    Instead of shipping the full Q-table (which can be huge), we do a 
-    linear regression from states → best actions to get interpretable weights.
-    These weights are what the JS demo uses as its policy.
-    """
+    """Fit logistic regression to approximate Q-table policy."""
     from sklearn.linear_model import LogisticRegression
     from sklearn.preprocessing import StandardScaler
 
@@ -192,8 +171,6 @@ def build_feature_weight_policy(q_table_agent, env, seed=42):
     clf.fit(X_scaled, y)
 
     accuracy = clf.score(X_scaled, y)
-    print(f"\n  Policy approximation accuracy: {accuracy:.1%}")
-    print(f"  ({len(states_list)} state-action samples from trained agent)")
 
     # Extract per-location carbon/solar/wind weights from the coefficients
     # State layout per location (7 features): solar, wind, carbon, util, capacity, cost, pue
@@ -245,50 +222,37 @@ def build_feature_weight_policy(q_table_agent, env, seed=42):
 
 
 def main():
-    SEED = 42
-    N_EPISODES = 500
     env = DataCentreEnv(seed=SEED)
-
     start_time = time.time()
 
-    # ── 1. Train Q-Learning ──────────────────────────────────
     q_agent = QTableAgent(seed=SEED, epsilon_start=1.0, epsilon_end=0.05,
                           epsilon_decay=0.995, learning_rate=0.1)
     q_metrics, q_rewards, q_carbon, q_sla, q_renew = train_agent(
-        q_agent, env, N_EPISODES, seed=SEED, label="Q-Learning"
+        q_agent, env, N_EPISODES_MAIN, seed=SEED, label="Q-Learning"
     )
 
-    # ── 2. Train DQN ─────────────────────────────────────────
     dqn_agent = DQNAgent(seed=SEED, epsilon_start=1.0, epsilon_end=0.02,
                          epsilon_decay=0.998, learning_rate=1e-4)
     dqn_metrics, dqn_rewards, dqn_carbon, dqn_sla, dqn_renew = train_agent(
-        dqn_agent, env, N_EPISODES, seed=SEED, label="DQN"
+        dqn_agent, env, N_EPISODES_MAIN, seed=SEED, label="DQN"
     )
 
-    # ── 3. Run baselines (no training) ───────────────────────
     random_agent = RandomAgent(seed=SEED)
     rand_metrics, rand_rewards, rand_carbon, rand_sla, rand_renew = train_agent(
-        random_agent, env, 100, seed=SEED, label="Random Baseline"
+        random_agent, env, N_EPISODES_BASELINE, seed=SEED, label="Random Baseline"
     )
 
     greedy_agent = GreedyAgent(seed=SEED)
     greed_metrics, greed_rewards, greed_carbon, greed_sla, greed_renew = train_agent(
-        greedy_agent, env, 100, seed=SEED, label="Greedy Baseline"
+        greedy_agent, env, N_EPISODES_BASELINE, seed=SEED, label="Greedy Baseline"
     )
 
     train_time = time.time() - start_time
 
-    # ── 4. Extract DQN policy table ──────────────────────────
-    print("\n  Extracting DQN policy table...")
-    dqn_policy = extract_dqn_policy_table(dqn_agent, env, n_samples=500, seed=SEED)
-    print(f"  → {len(dqn_policy)} unique state bins in policy table")
-
-    # ── 5. Extract linear policy approximation from Q-table ──
-    print("\n  Fitting linear policy approximation...")
-    q_agent.epsilon = 0.0  # Pure exploitation
+    dqn_policy = extract_dqn_policy_table(dqn_agent, env, n_samples=N_SAMPLES_DQN, seed=SEED)
+    q_agent.epsilon = 0.0
     linear_policy = build_feature_weight_policy(q_agent, env, seed=SEED)
 
-    # ── 6. Build export JSON ──────────────────────────────────
     def summarise(metrics, rewards, carbon, sla, renew, last_n=50):
         return {
             'avg_reward': float(np.mean(rewards[-last_n:])),
@@ -344,7 +308,7 @@ def main():
         },
         'dqn_policy_table': {
             k: {'action': v['action'], 'q_values': v['q_values']}
-            for k, v in list(dqn_policy.items())[:5000]
+            for k, v in list(dqn_policy.items())[:POLICY_TABLE_LIMIT]
         },
     }
 
@@ -356,25 +320,11 @@ def main():
         json.dump(export, f, indent=None, separators=(',', ':'))
 
     file_size = os.path.getsize(out_path) / 1024
-    print(f"\n{'='*60}")
-    print(f"  EXPORT COMPLETE")
-    print(f"{'='*60}")
-    print(f"  Output: {out_path}")
-    print(f"  File size: {file_size:.0f} KB")
-    print(f"  Training time: {train_time:.1f}s")
-    print(f"  Q-table states: {len(q_agent.q_table)}")
-    print(f"  DQN policy bins: {len(dqn_policy)}")
-    print(f"  Policy approx accuracy: {linear_policy['accuracy']:.1%}")
-    print()
+    print(f"Exported to {out_path} ({file_size:.0f} KB)")
 
-    # Print comparison table
-    print(f"  {'Agent':12s} | {'Reward':>8s} | {'Carbon':>8s} | {'SLA':>6s} | {'Renew':>6s}")
-    print(f"  {'-'*12}-+-{'-'*8}-+-{'-'*8}-+-{'-'*6}-+-{'-'*6}")
     for name in ['random', 'greedy', 'q_learning', 'dqn']:
         m = export['final_metrics'][name]
-        print(f"  {name:12s} | {m['avg_reward']:8.1f} | {m['avg_carbon_saved']:7.0f}g | "
-              f"{m['avg_sla_compliance']:5.1%} | {m['avg_renewable_fraction']:5.1%}")
-    print()
+        print(f"{name:10s}: Reward={m['avg_reward']:7.1f}, Carbon={m['avg_carbon_saved']:6.0f}g")
 
 
 if __name__ == '__main__':

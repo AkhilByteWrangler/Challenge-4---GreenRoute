@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
 """
-PPO Training for GreenRoute — Sophisticated Offline Training.
+PPO training for GreenRoute with stochastic weather and multi-season variation.
 
-Features:
-  - PPO with Actor-Critic (shared backbone, 256→128 hidden)
-  - 2000 episodes of training with LR annealing
-  - STOCHASTIC WEATHER: seasonal variation, cold snaps, heat waves,
-    cloud fronts, wind droughts — no two episodes are the same
-  - Weather regimes: clear, overcast, storm, cold_snap, heat_wave
-  - Multi-season training (winter/spring/summer/fall with different
-    solar/wind availability per region)
-  - Exports trained weights to JSON for browser demo
-  - Compares PPO vs Random vs Greedy baselines
-
-Usage:
-    python train_ppo.py
+Trains a PPO agent on 5000 episodes with realistic weather events, exports
+learned weights to JSON for browser inference, and compares against baselines.
 """
 
-import sys, os, json, time, copy
+import sys
+import os
+import json
+import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,10 +22,7 @@ from agents.greedy_agent import GreedyAgent
 from evaluation.metrics import MetricsTracker
 
 
-# ═══════════════════════════════════════════════════════════════
-# STOCHASTIC WEATHER SYSTEM
-# ═══════════════════════════════════════════════════════════════
-
+# Weather regimes — affects renewable output and carbon intensity
 WEATHER_REGIMES = {
     "clear":      {"cloud_mean": 0.1,  "cloud_std": 0.05, "wind_mult": 0.8, "solar_mult": 1.2, "prob": 0.25},
     "partly":     {"cloud_mean": 0.35, "cloud_std": 0.1,  "wind_mult": 1.0, "solar_mult": 1.0, "prob": 0.30},
@@ -44,13 +33,14 @@ WEATHER_REGIMES = {
 }
 
 SEASONS = {
-    "winter":  {"solar_scale": 0.55, "wind_scale": 1.3,  "hydro_scale": 0.8,  "months": [12, 1, 2]},
-    "spring":  {"solar_scale": 0.85, "wind_scale": 1.15, "hydro_scale": 1.2,  "months": [3, 4, 5]},
-    "summer":  {"solar_scale": 1.2,  "wind_scale": 0.75, "hydro_scale": 0.6,  "months": [6, 7, 8]},
-    "fall":    {"solar_scale": 0.75, "wind_scale": 1.1,  "hydro_scale": 1.0,  "months": [9, 10, 11]},
+    "winter":  {"solar_scale": 0.55, "wind_scale": 1.3,  "hydro_scale": 0.8},
+    "spring":  {"solar_scale": 0.85, "wind_scale": 1.15, "hydro_scale": 1.2},
+    "summer":  {"solar_scale": 1.2,  "wind_scale": 0.75, "hydro_scale": 0.6},
+    "fall":    {"solar_scale": 0.75, "wind_scale": 1.1,  "hydro_scale": 1.0},
 }
 
 # Per-location weather vulnerability — matches browser EVENT_SUSCEPTIBILITY
+# Per-location weather event probabilities
 LOCATION_WEATHER_SENSITIVITY = {
     "CA": {"solar_var": 0.2,  "wind_var": 0.3,  "cold_risk": 0.01, "storm_risk": 0.03, "heat_risk": 0.06, "solar_boom_risk": 0.10},
     "TX": {"solar_var": 0.15, "wind_var": 0.4,  "cold_risk": 0.03, "storm_risk": 0.10, "heat_risk": 0.07, "solar_boom_risk": 0.04},
@@ -58,6 +48,25 @@ LOCATION_WEATHER_SENSITIVITY = {
     "OR": {"solar_var": 0.35, "wind_var": 0.2,  "cold_risk": 0.12, "storm_risk": 0.04, "heat_risk": 0.01, "solar_boom_risk": 0.02},
     "AZ": {"solar_var": 0.1,  "wind_var": 0.3,  "cold_risk": 0.01, "storm_risk": 0.02, "heat_risk": 0.10, "solar_boom_risk": 0.12},
 }
+
+# Weather event impacts on carbon multipliers
+CARBON_MULTIPLIERS = {
+    "cold_snap": 3.0,
+    "storm": 2.5,
+    "heat_wave": 2.5,
+    "solar_boom": 0.3,
+}
+
+# Weather model constants
+WEATHER_REGIME_CHANGE_PROB = 0.04
+WEATHER_EVENT_SCALE = 0.25
+EVENT_DURATION_MIN, EVENT_DURATION_MAX = 1.5, 5.5
+TIMESTEP_HOURS = 0.25
+CLOUD_AR_COEF = 0.9
+WIND_AR_COEF = 0.85
+WIND_AR_SCALE = 0.15
+WIND_CURTAIL_THRESHOLD = 18.0
+WIND_CURTAIL_FACTOR = 0.4
 
 
 class StochasticWeatherModel:
@@ -287,19 +296,19 @@ class StochasticDataCentreEnv(DataCentreEnv):
 
         dest = action_result["destination"]
 
-        # ── 1. Carbon savings (DOMINANT — this is what browser shows) ──
+        # Carbon savings (primary signal)
         carbon_saved = action_result["local_carbon"] - action_result["routed_carbon"]
         r_carbon = carbon_saved * 0.10  # strong primary signal
 
-        # ── 2. Renewable fraction (proportional) ──
+        # Renewable fraction bonus
         rf = action_result.get("renewable_fraction", 0)
         r_renewable = rf * 5.0
 
-        # ── 3. Cost savings (secondary) ──
+        # Cost savings
         cost_saved = action_result["local_cost"] - action_result["routed_cost"]
         r_cost = cost_saved * 8.0
 
-        # ── 4. Utilization — light, only prevent extreme overload ──
+        # Utilization penalty (extreme overload only)
         renewable_states = self.renewable_model.get_all_states(self.current_hour)
         renewable_fracs = {loc: renewable_states[loc]["renewable_fraction"] for loc in LOCATION_IDS}
         grid_states = self.grid_model.get_all_states(self.current_hour, renewable_fracs)
@@ -308,16 +317,16 @@ class StochasticDataCentreEnv(DataCentreEnv):
         if dest_util > 0.85:
             r_util = -(dest_util - 0.85) * 12.0
 
-        # ── 5. SLA penalty ──
+        # SLA violation penalty
         r_sla = -20.0 if action_result["sla_violated"] else 0.0
 
-        # ── 6. Capacity ──
+        # Capacity exceeded penalty
         r_cap = -15.0 if action_result["capacity_exceeded"] else 0.0
 
-        # ── 7. Transfer cost ──
+        # Transfer cost penalty
         r_transfer = -action_result["transfer_cost"] * 2.0
 
-        # ── 8. Weather event penalty/bonus ──
+        # Weather event penalty/bonus
         # Explicit signal: routing to a DC with a negative event is BAD
         r_weather = 0.0
         active_events = getattr(self, '_active_weather_events', {})
@@ -404,27 +413,14 @@ class StochasticDataCentreEnv(DataCentreEnv):
         if hasattr(self, '_original_base_carbon'):
             self.grid_model.base_carbon = dict(self._original_base_carbon)
 
-        # Normal time advance (calls renewable_model.step which triggers weather events)
         super()._advance_time()
 
-        # Apply carbon multipliers from active weather events
-        CARBON_MULTS = {
-            "cold_snap":   3.0,   # heating demand → heavy fossil
-            "storm":       2.5,   # grid instability
-            "heat_wave":   2.5,   # AC demand surge
-            "solar_boom":  0.3,   # grid flooded with solar
-        }
         if hasattr(self, '_weather'):
             for loc_id, event in self._weather.active_events.items():
-                mult = CARBON_MULTS.get(event["type"], 1.0)
+                mult = CARBON_MULTIPLIERS.get(event["type"], 1.0)
                 self.grid_model.base_carbon[loc_id] = self._original_base_carbon[loc_id] * mult
-            # Sync events so _build_observation includes event indicators
             self._active_weather_events = dict(self._weather.active_events)
 
-
-# ═══════════════════════════════════════════════════════════════
-# TRAINING
-# ═══════════════════════════════════════════════════════════════
 
 def train_ppo(env, agent, num_episodes=2000, seed=42):
     """Train PPO agent with detailed logging."""
@@ -435,13 +431,7 @@ def train_ppo(env, agent, num_episodes=2000, seed=42):
     episode_renew = []
     season_counts = {"winter": 0, "spring": 0, "summer": 0, "fall": 0}
 
-    print(f"\n{'='*70}")
-    print(f"  PPO TRAINING — {num_episodes} episodes")
-    print(f"  Stochastic weather: seasons, regimes, cold snaps, storms")
-    print(f"  Network: Actor-Critic [47 → 256 → 128 → 5 actions]")
-    print(f"  GAE(λ={agent.gae_lambda}), Clip(ε={agent.clip_eps}), "
-          f"{agent.n_epochs} epochs, batch={agent.batch_size}")
-    print(f"{'='*70}")
+    print(f"\nTraining PPO for {num_episodes} episodes")
 
     start = time.time()
 
@@ -450,9 +440,8 @@ def train_ppo(env, agent, num_episodes=2000, seed=42):
         season = info.get("season", "unknown")
         season_counts[season] = season_counts.get(season, 0) + 1
 
-        done = False
         ep_reward = 0.0
-        steps = 0
+        done = False
 
         while not done:
             action_mask = env.get_action_mask()
@@ -462,7 +451,6 @@ def train_ppo(env, agent, num_episodes=2000, seed=42):
             metrics.record_step(action, reward, info)
             state = next_state
             ep_reward += reward
-            steps += 1
             if done or truncated:
                 break
 
@@ -473,22 +461,12 @@ def train_ppo(env, agent, num_episodes=2000, seed=42):
         episode_renew.append(ep_summary["renewable_fraction_avg"])
 
         if (ep + 1) % 100 == 0:
-            elapsed = time.time() - start
             last_r = np.mean(episode_rewards[-100:])
             last_c = np.mean(episode_carbon[-100:])
-            last_s = np.mean(episode_sla[-100:])
-            last_re = np.mean(episode_renew[-100:])
-            print(f"  Ep {ep+1:5d}/{num_episodes} | "
-                  f"Reward: {last_r:8.1f} | Carbon: {last_c:7.0f}g | "
-                  f"SLA: {last_s:.1%} | Renew: {last_re:.1%} | "
-                  f"Updates: {agent.update_count} | "
-                  f"Season: {season} | {elapsed:.0f}s")
+            print(f"Ep {ep+1}/{num_episodes}: Reward={last_r:.1f}, Carbon={last_c:.0f}g")
 
     train_time = time.time() - start
-    print(f"\n  Training completed in {train_time:.1f}s")
-    print(f"  PPO updates: {agent.update_count}")
-    print(f"  Total gradient steps: {agent.total_updates}")
-    print(f"  Seasons seen: {season_counts}")
+    print(f"Done in {train_time:.1f}s")
 
     return metrics, episode_rewards, episode_carbon, episode_sla, episode_renew, train_time
 
@@ -531,7 +509,6 @@ def main():
     # Use stochastic weather environment
     env = StochasticDataCentreEnv(seed=SEED)
 
-    # ── 1. Train PPO ──
     ppo_agent = PPOAgent(
         state_dim=67, num_actions=7, seed=SEED,
         hidden_dims=[256, 256],     # wider network for more capacity
@@ -539,11 +516,11 @@ def main():
         gamma=0.99,
         gae_lambda=0.95,
         clip_eps=0.2,
-        entropy_coef=0.03,          # high entropy → explore diverse DC combos
+        entropy_coef=0.03,          # encourages exploration
         value_coef=0.5,
         max_grad_norm=0.5,
         n_epochs=8,
-        n_steps=96,                 # 1 episode per update → faster learning
+        n_steps=96,                 # 1 episode per update
         batch_size=32,
         anneal_lr=True,
         total_timesteps=N_EPISODES * 96,
@@ -560,10 +537,7 @@ def main():
     ppo_agent.save(os.path.join(checkpoint_dir, "ppo_final.pt"))
     print(f"  Checkpoint saved to {checkpoint_dir}/ppo_final.pt")
 
-    # ── 2. Evaluate baselines on same stochastic env ──
-    print(f"\n{'='*70}")
-    print(f"  BASELINE COMPARISON ({N_EVAL} episodes, stochastic weather)")
-    print(f"{'='*70}")
+    print(f"\nEvaluating baselines ({N_EVAL} episodes)")
 
     random_agent = RandomAgent(seed=SEED)
     greedy_agent = GreedyAgent(seed=SEED)
@@ -581,12 +555,7 @@ def main():
         ppo_agent, env, N_EVAL, SEED, "PPO (eval)"
     )
 
-    # ── 3. Export for browser demo ──
-    print(f"\n{'='*70}")
-    print(f"  EXPORTING TRAINED PPO FOR BROWSER DEMO")
-    print(f"{'='*70}")
-
-    # Export neural network weights
+    print("\nExporting weights to JSON")
     ppo_weights = ppo_agent.export_weights_for_js()
 
     def summarise(rewards, carbon, sla, renew, last_n=100):
@@ -612,7 +581,7 @@ def main():
             "state_dim": 47,
             "action_dim": 7,
             "locations": LOCATION_IDS,
-            "network_architecture": "Actor-Critic MLP [47→256→128→5]",
+            "network_architecture": "Actor-Critic MLP [47-256-128-5]",
             "hyperparameters": {
                 "lr": 3e-4, "gamma": 0.99, "gae_lambda": 0.95,
                 "clip_eps": 0.2, "entropy_coef": 0.01,
@@ -640,7 +609,6 @@ def main():
         },
     }
 
-    # Write
     out_dir = os.path.join(os.path.dirname(__file__), "demo", "public")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "trained_policy.json")
@@ -648,33 +616,7 @@ def main():
         json.dump(export, f, indent=None, separators=(",", ":"))
 
     file_size = os.path.getsize(out_path) / 1024
-
-    print(f"\n  Output: {out_path}")
-    print(f"  File size: {file_size:.0f} KB")
-    print(f"  PPO updates: {ppo_agent.update_count}")
-    print(f"  Total gradient steps: {ppo_agent.total_updates}")
-
-    # Print comparison
-    print(f"\n  {'Agent':12s} | {'Reward':>8s} | {'Carbon':>8s} | {'SLA':>6s} | {'Renew':>6s}")
-    print(f"  {'-'*12}-+-{'-'*8}-+-{'-'*8}-+-{'-'*6}-+-{'-'*6}")
-    for name, data in export["final_metrics"].items():
-        print(f"  {name:12s} | {data['avg_reward']:8.1f} | "
-              f"{data['avg_carbon_saved']:7.0f}g | "
-              f"{data['avg_sla_compliance']:5.1%} | "
-              f"{data['avg_renewable_fraction']:5.1%}")
-
-    # PPO improvement over baselines
-    ppo_c = export["final_metrics"]["ppo_eval"]["avg_carbon_saved"]
-    greedy_c = export["final_metrics"]["greedy"]["avg_carbon_saved"]
-    random_c = export["final_metrics"]["random"]["avg_carbon_saved"]
-
-    if greedy_c > 0:
-        print(f"\n  PPO vs Greedy: {(ppo_c - greedy_c) / greedy_c * 100:+.1f}% carbon savings")
-    if random_c > 0:
-        print(f"  PPO vs Random: {(ppo_c - random_c) / random_c * 100:+.1f}% carbon savings")
-
-    print(f"\n  Done! Browser demo will load these weights automatically.")
-    print()
+    print(f"Exported to {out_path} ({file_size:.0f} KB)")
 
 
 if __name__ == "__main__":
