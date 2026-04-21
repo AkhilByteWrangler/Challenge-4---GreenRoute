@@ -231,9 +231,9 @@ The policy can behave differently by job type; a greedy baseline typically treat
 
 ---
 
-## Evaluation Results (300 Episodes per Agent)
+## Evaluation Results (5000 Episodes Training, 5000 Episodes Evaluation per Agent)
 
-### Performance Comparison: Greedy vs. PPO (Optimized)
+### Performance Comparison: All Agents
 
 | Metric | Greedy (Google's Approach) | PPO (Ours) |
 |--------|---|---|
@@ -245,13 +245,14 @@ The policy can behave differently by job type; a greedy baseline typically treat
 
 ### Training Configuration: PPO Hyperparameters
 
-- Network architecture: [512, 256] hidden layers (increased from [256, 128])
-- Learning rate: 5e-4 (increased from 3e-4)
-- Entropy coefficient: 0.001 (reduced from 0.03 for better exploitation)
-- Rollout size: 4096 steps per update (increased from 96 for cleaner advantage estimates)
-- Batch size: 256 (increased for stable gradients)
-- Epochs per update: 20 (increased for thorough optimization)
+- Network architecture: [256, 256] hidden layers
+- Learning rate: 3e-4
+- Entropy coefficient: 0.005 (reduced from 0.03 to prevent over-exploration)
+- Rollout size: 2048 steps per update (increased from 96 for cleaner advantage estimates)
+- Batch size: 64 (increased to match larger rollouts)
+- Epochs per update: 10
 - Total training: 5000 episodes with MPS GPU acceleration
+- Device: Apple Metal Performance Shaders (MPS) GPU for acceleration
 
 ### Why Greedy Carbon Is Higher (But PPO Is Better Overall)
 
@@ -397,7 +398,7 @@ reward = 2.5 × carbon_saving          (primary: reduce carbon)
 Input (67-dim state)
     |
     V
-Backbone: Linear(67->512) -> LayerNorm -> Tanh -> Linear(512->256) -> LayerNorm -> Tanh
+Backbone: Linear(67->256) -> LayerNorm -> Tanh -> Linear(256->256) -> LayerNorm -> Tanh
     |                                               |
     V                                               V
 Actor Head:                                    Critic Head:
@@ -408,11 +409,11 @@ Action Probabilities (7 actions)               State Value V(s)
 ```
 
 - Training: 5000 episodes with stochastic weather, seasonal variation
-- Network: [512, 256] hidden dims (larger capacity for complex tradeoffs)
+- Network: [256, 256] hidden dims
 - Clipping: PPO-Clip with epsilon=0.2
-- Entropy coefficient: 0.001 (minimal exploration, strong exploitation)
-- Rollout: 4096 steps per update (clean advantage estimation)
-- Value coefficient: 1.0 (strong value function learning)
+- Entropy coefficient: 0.005 (balanced exploration/exploitation)
+- Rollout: 2048 steps per update (clean advantage estimation)
+- Value coefficient: 0.5 (standard value function learning)
 - Export: Weights exported to JSON for browser inference
 
 ### Agents Implemented for Comparison
@@ -475,7 +476,8 @@ The browser demo runs the trained PPO policy **client-side** (no server). Weight
 ```
 greenroute/
 ├── environment/                 # RL environment
-│   ├── datacentre_env.py        # Main Gym env (DataCentreEnv + StochasticDataCentreEnv)
+│   ├── datacentre_env.py        # Main Gym env (DataCentreEnv)
+│   ├── stochastic_env.py        # Stochastic weather + StochasticDataCentreEnv
 │   ├── grid_carbon_model.py     # Carbon intensity & energy cost per DC
 │   ├── renewable_model.py       # Solar irradiance & wind speed models
 │   ├── job_generator.py         # Job generation (FLEXIBLE, SEMI_FLEX, PINNED)
@@ -493,12 +495,10 @@ greenroute/
 │   ├── carbon_budget_tracker.py # Carbon budget monitoring
 │   └── equity_auditor.py        # Load balancing fairness
 │
-├── evaluation/                  # Metrics & visualisation
-│   ├── metrics.py               # Evaluation metrics computation
-│   └── visualise.py             # Training curve plots
+├── evaluation/                  # Metrics
+│   └── metrics.py               # Evaluation metrics computation
 │
-├── train_ppo.py                 # PPO training script (5000 episodes)
-├── train_and_export.py          # Train + export weights to JSON
+├── train_all_agents.py          # Unified training script (PPO, DQN, Q-Learning, baselines)
 ├── requirements.txt             # Python dependencies
 │
 └── demo/                        # Browser demo (React + Vite)
@@ -507,23 +507,31 @@ greenroute/
     │   ├── components/          # React UI components
     │   └── hooks/               # React hooks for state management
     └── public/
-        └── trained_policy.json  # Exported NN weights + training metadata
+        └── all_agents_results.json  # All agent results & training metadata
 ```
 
 ---
 
 ## How to Run
 
-### Training
+### Training All Agents
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Train PPO agent (5000 episodes, ~25-30 minutes on MPS GPU)
-python train_ppo.py
+# Activate virtual environment
+source venv/bin/activate
 
-# Weights are automatically exported to demo/public/trained_policy.json
+# Train all agents (PPO, DQN, Q-Learning, Greedy, Random)
+# Total: 5000 episodes each, ~2-3 hours on MPS GPU
+python train_all_agents.py
+
+# Outputs:
+# - Checkpoints: checkpoints/{agent_name}.pt
+# - Metrics: outputs/metrics_table.md
+# - Visualizations: outputs/training_curves.png, outputs/agent_comparison.png
+# - Results export: demo/public/all_agents_results.json
 ```
 
 ### Browser Demo
@@ -533,13 +541,6 @@ cd demo
 npm install
 npm run dev
 # Open http://localhost:5173
-```
-
-### Evaluating Agents
-
-```bash
-python train_and_export.py
-# Outputs comparison metrics for PPO vs Greedy vs Random
 ```
 
 ---
